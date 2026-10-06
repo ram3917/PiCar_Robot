@@ -1,0 +1,2 @@
+# Shell scripts run on the Pi and in Linux containers
+*.sh text eol=lf
