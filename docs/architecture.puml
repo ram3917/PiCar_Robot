@@ -1,0 +1,46 @@
+@startuml architecture
+title PiCar_Robot - components
+
+skinparam componentStyle rectangle
+
+actor Operator
+
+package "picar_ros (ROS 2 nodes)" {
+  component "perception" as perception
+  component "planning" as planning
+  component "action" as action
+}
+
+package "picar_core (pure Python, no ROS)" {
+  component "Avoider\n(state machine)" as avoider
+  component "Watchdog" as watchdog
+  interface "RobotHardware" as hw
+  component "FakeRobot\n(hardware:=fake)" as fake
+  component "PiCar4WD adapter\n(hardware:=picar4wd)" as adapter
+}
+
+node "PiCar-4WD HAT" as hat {
+  component "Ultrasonic sensor" as sonar
+  component "Servo\n(locked forward)" as servo
+  component "Motors x4" as motors
+}
+
+perception --> planning : /ultrasonic/range\nsensor_msgs/Range, 10 Hz
+planning --> action : /cmd_vel\ngeometry_msgs/Twist, 20 Hz while armed
+Operator --> planning : /arm\nstd_srvs/SetBool
+planning --> Operator : /robot_state\nstd_msgs/String
+Operator ..> action : /cmd_vel\n(teleop_twist_keyboard, while disarmed)
+
+planning ..> avoider : uses
+action ..> watchdog : uses
+perception ..> hw : read_distance_cm()
+action ..> hw : set_wheel_speeds() / stop()
+
+fake ..|> hw
+adapter ..|> hw
+
+adapter --> sonar
+adapter --> servo
+adapter --> motors
+
+@enduml

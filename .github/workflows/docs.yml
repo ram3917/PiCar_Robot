@@ -1,0 +1,17 @@
+name: docs
+
+on:
+  push:
+    branches: [main]
+    paths: ["docs/**.puml", ".github/workflows/docs.yml"]
+  pull_request:
+    paths: ["docs/**.puml", ".github/workflows/docs.yml"]
+
+jobs:
+  plantuml:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check PlantUML diagrams
+        working-directory: docs
+        run: docker run --rm -v "$PWD:/data" -w /data plantuml/plantuml -checkonly -failfast2 *.puml
