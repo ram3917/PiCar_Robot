@@ -1,0 +1,122 @@
+# Publishes docs/ (Markdown + rendered PlantUML) and README.md to the GitHub wiki.
+#
+# The wiki is generated: manual edits on the wiki are overwritten on the next run.
+# Edit files in docs/ instead.
+#
+# Conventions in docs/*.md:
+#   - Link pages as   [Deployment](deployment.md)          -> becomes [Deployment](deployment)
+#   - Embed diagrams  ![Architecture](architecture.puml)   -> becomes ![Architecture](architecture.svg)
+#
+# One-time setup: Settings -> Features -> Wikis ON, then create any first page
+# in the Wiki tab (the wiki git repo does not exist until that first save).
+
+name: Publish wiki
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "README.md"
+      - ".github/workflows/wiki.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write   # GITHUB_TOKEN needs this to push to the .wiki repo
+
+concurrency:
+  group: wiki
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Install PlantUML
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq plantuml graphviz
+
+      - name: Render PlantUML to SVG
+        run: |
+          mkdir -p build/wiki
+          shopt -s nullglob
+          files=(docs/*.puml)
+          if (( ${#files[@]} )); then
+            plantuml -tsvg -failfast2 -o "$PWD/build/wiki" "${files[@]}"
+          else
+            echo "No .puml files found"
+          fi
+
+      - name: Build wiki pages
+        run: |
+          set -euo pipefail
+          out=build/wiki
+          mkdir -p "$out"
+          shopt -s nullglob
+
+          # Rewrite repo-style links to wiki-style links
+          fix_links() {
+            sed -E \
+              -e 's#\]\((\./)?docs/([^)#]+)\.md(\#[^)]*)?\)#](\2\3)#g' \
+              -e 's#\]\((\./)?([^):/]+)\.md(\#[^)]*)?\)#](\2\3)#g' \
+              -e 's#\]\((\./)?(docs/)?([^):/]+)\.puml\)#](\3.svg)#g' \
+              "$1"
+          }
+
+          # Home page from README.md (unless docs/Home.md exists)
+          if [[ -f docs/Home.md ]]; then
+            fix_links docs/Home.md > "$out/Home.md"
+          elif [[ -f README.md ]]; then
+            fix_links README.md > "$out/Home.md"
+          fi
+
+          for f in docs/*.md; do
+            name=$(basename "$f")
+            [[ "$name" == "Home.md" ]] && continue
+            fix_links "$f" > "$out/$name"
+          done
+
+          # Copy any static images used by docs
+          for img in docs/*.{png,jpg,jpeg,gif,svg}; do cp "$img" "$out/"; done
+
+          # Sidebar listing all pages
+          {
+            echo "**[Home](Home)**"
+            echo
+            for f in "$out"/*.md; do
+              page=$(basename "$f" .md)
+              [[ "$page" == "Home" || "$page" == _* ]] && continue
+              echo "- [${page//-/ }]($page)"
+            done
+            echo
+            echo "_Generated from [\`docs/\`](https://github.com/${GITHUB_REPOSITORY}/tree/main/docs) — edit there, not here._"
+          } > "$out/_Sidebar.md"
+
+          ls -la "$out"
+
+      - name: Push to wiki
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git clone --depth 1 "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.wiki.git" wiki \
+            || { echo "::error::Wiki repo not found. Enable Wikis and create a first page in the Wiki tab."; exit 1; }
+
+          # Replace wiki content entirely with generated pages
+          find wiki -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -r build/wiki/. wiki/
+
+          cd wiki
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Wiki already up to date"
+          else
+            git commit -m "Sync wiki from ${GITHUB_SHA::7}"
+            git push
+          fi
