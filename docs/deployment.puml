@@ -1,0 +1,29 @@
+@startuml deployment
+title PiCar_Robot - build and deployment
+
+actor Developer
+
+node "GitHub" {
+  component "Repository\nram3917/PiCar_Robot" as repo
+  component "GitHub Actions" as ci
+  database "GHCR\nghcr.io/ram3917/picar_robot" as ghcr
+}
+
+node "Raspberry Pi 3B+ (64-bit OS, Docker)" as pi {
+  component "scripts/update.sh" as update
+  component "docker compose\n(docker/compose.yaml)" as compose
+  component "picar container\nROS 2 Jazzy, network_mode: host" as container
+}
+
+node "PiCar-4WD HAT" as hat
+
+Developer --> repo : git push to main\nor tag vX.Y.Z
+repo --> ci : triggers
+ci --> ghcr : build linux/arm64, push\nlatest, sha-<short>, vX.Y.Z
+Developer --> update : ssh, optionally with IMAGE_TAG
+update --> compose : pull, then up -d
+ghcr --> compose : image for IMAGE_TAG\n(default latest)
+compose --> container : restart: unless-stopped
+container --> hat : /dev/i2c-1, /dev/gpiomem
+
+@enduml

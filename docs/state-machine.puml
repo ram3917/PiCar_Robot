@@ -1,0 +1,30 @@
+@startuml state-machine
+title Planning node - avoidance state machine
+
+[*] --> DISARMED : boot
+
+DISARMED : nothing published on /cmd_vel
+CRUISE : forward at cruise_speed
+STOP : zero command
+REVERSE : backing away
+TURN : turning on the spot
+FAULT : zero command
+
+DISARMED --> CRUISE : /arm true
+CRUISE --> STOP : range < stop_distance_cm
+STOP --> REVERSE : stopped
+REVERSE --> TURN : reversed
+TURN --> CRUISE : after turn_duration_s
+
+CRUISE --> FAULT : range invalid or\nolder than range_stale_ms
+STOP --> FAULT : range invalid or stale
+REVERSE --> FAULT : range invalid or stale
+TURN --> FAULT : range invalid or stale
+
+CRUISE --> DISARMED : /arm false
+STOP --> DISARMED : /arm false
+REVERSE --> DISARMED : /arm false
+TURN --> DISARMED : /arm false
+FAULT --> DISARMED : /arm false
+
+@enduml
