@@ -12,7 +12,10 @@ authors = [{ name = "Rama Mallavarapu" }]
 dependencies = []
 
 [project.optional-dependencies]
-test = ["pytest>=7"]
+test = ["pytest>=7", "mypy>=1.0"]
+
+[dependency-groups]
+dev = ["pytest>=7", "mypy>=1.0"]
 
 [tool.setuptools.packages.find]
 include = ["picar_core*"]
