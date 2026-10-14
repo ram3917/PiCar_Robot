@@ -2,7 +2,7 @@ import math
 
 import pytest
 
-from picar_core import FakeRobot, RobotHardware, SetServoAngle, SetWheelSpeeds, Stop
+from picar_core import FakeRobot, RobotHardware, SetMotorPower, SetServoAngle, Stop
 
 
 def test_fake_robot_satisfies_the_hardware_protocol():
@@ -38,48 +38,58 @@ def test_script_distances_queues_after_existing_readings():
     assert [robot.read_distance_cm() for _ in range(3)] == [40.0, 10.0, 5.0]
 
 
+def test_greyscale_is_whatever_the_test_sets():
+    robot = FakeRobot()
+    assert robot.read_greyscale() == (0, 0, 0)
+
+    robot.greyscale = (100, 2000, 300)
+
+    assert robot.read_greyscale() == (100, 2000, 300)
+
+
 def test_commands_are_recorded_in_call_order():
     robot = FakeRobot()
 
     robot.set_servo_angle(0.0)
-    robot.set_wheel_speeds(0.5, 0.5)
-    robot.set_wheel_speeds(-0.3, 0.3)
+    robot.set_motor_power([50, 50, 50, 50])
+    robot.set_motor_power((-30, 30, -30, 30))
     robot.stop()
 
     assert robot.commands == [
         SetServoAngle(0.0),
-        SetWheelSpeeds(0.5, 0.5),
-        SetWheelSpeeds(-0.3, 0.3),
+        SetMotorPower((50, 50, 50, 50)),
+        SetMotorPower((-30, 30, -30, 30)),
         Stop(),
     ]
 
 
-def test_reading_the_distance_is_not_recorded_as_a_command():
+def test_reading_sensors_is_not_recorded_as_a_command():
     robot = FakeRobot([10.0])
 
     robot.read_distance_cm()
+    robot.read_greyscale()
 
     assert robot.commands == []
 
 
-def test_wheel_speeds_track_the_latest_command():
+def test_motor_powers_track_the_latest_command():
     robot = FakeRobot()
     assert robot.is_stopped
 
-    robot.set_wheel_speeds(0.4, -0.4)
-    assert robot.wheel_speeds == (0.4, -0.4)
+    robot.set_motor_power((40, -40, 40, -40))
+    assert robot.motor_powers == (40, -40, 40, -40)
     assert not robot.is_stopped
 
     robot.stop()
-    assert robot.wheel_speeds == (0.0, 0.0)
+    assert robot.motor_powers == (0, 0, 0, 0)
     assert robot.is_stopped
 
 
-def test_zero_wheel_speeds_count_as_stopped():
+def test_zero_powers_count_as_stopped():
     robot = FakeRobot()
-    robot.set_wheel_speeds(0.4, 0.4)
+    robot.set_motor_power((40, 40, 40, 40))
 
-    robot.set_wheel_speeds(0.0, 0.0)
+    robot.set_motor_power((0, 0, 0, 0))
 
     assert robot.is_stopped
 
@@ -93,24 +103,24 @@ def test_servo_angle_tracks_the_latest_command():
     assert robot.servo_angle == -30.0
 
 
-@pytest.mark.parametrize("left, right", [(1.0, 1.0), (-1.0, -1.0), (-1.0, 1.0)])
-def test_wheel_speeds_at_the_limits_are_accepted(left, right):
+@pytest.mark.parametrize("powers", [(100, 100, 100, 100), (-100, -100, -100, -100), (-100, 100, -100, 100)])
+def test_powers_at_the_limits_are_accepted(powers):
     robot = FakeRobot()
 
-    robot.set_wheel_speeds(left, right)
+    robot.set_motor_power(powers)
 
-    assert robot.wheel_speeds == (left, right)
+    assert robot.motor_powers == powers
 
 
 @pytest.mark.parametrize(
-    "left, right",
-    [(1.01, 0.0), (0.0, -1.01), (100.0, 100.0), (math.nan, 0.0), (0.0, math.inf)],
+    "powers",
+    [(101, 0, 0, 0), (0, -101, 0, 0), (0, 0, 0), (0.5, 0, 0, 0), (math.nan, 0, 0, 0)],
 )
-def test_out_of_range_wheel_speeds_are_rejected_and_not_recorded(left, right):
+def test_bad_powers_are_rejected_and_not_recorded(powers):
     robot = FakeRobot()
 
     with pytest.raises(ValueError):
-        robot.set_wheel_speeds(left, right)
+        robot.set_motor_power(powers)
 
     assert robot.commands == []
     assert robot.is_stopped

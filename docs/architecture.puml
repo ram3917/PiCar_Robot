@@ -6,14 +6,17 @@ skinparam componentStyle rectangle
 actor Operator
 
 package "picar_ros (ROS 2 nodes)" {
-  component "perception" as perception
-  component "planning" as planning
-  component "action" as action
+  component "controller\n(the only hardware owner)" as controller
+  component "motion_planner" as planner
+}
+
+package "picar_interfaces" {
+  component "SensorFrame\nMotionPlan\nMotorPower" as msgs
 }
 
 package "picar_core (pure Python, no ROS)" {
-  component "Avoider\n(state machine)" as avoider
-  component "Watchdog" as watchdog
+  component "MotorGovernor\n(plan playback + safety)" as governor
+  component "ReactivePlanner" as reactive
   interface "RobotHardware" as hw
   component "FakeRobot\n(hardware:=fake)" as fake
   component "PiCar4WD adapter\n(hardware:=picar4wd)" as adapter
@@ -21,25 +24,26 @@ package "picar_core (pure Python, no ROS)" {
 
 node "PiCar-4WD HAT" as hat {
   component "Ultrasonic sensor" as sonar
+  component "Greyscale ADC x3" as grey
   component "Servo\n(locked forward)" as servo
   component "Motors x4" as motors
 }
 
-perception --> planning : /ultrasonic/range\nsensor_msgs/Range, 10 Hz
-planning --> action : /cmd_vel\ngeometry_msgs/Twist, 20 Hz while armed
-Operator --> planning : /arm\nstd_srvs/SetBool
-planning --> Operator : /robot_state\nstd_msgs/String
-Operator ..> action : /cmd_vel\n(teleop_twist_keyboard, while disarmed)
+controller --> planner : /controller/sensor_frame\nSensorFrame, ~30 ms
+planner --> controller : /planner/motion_plan\nMotionPlan, 5-10 Hz
+Operator --> controller : /arm\nstd_srvs/SetBool
 
-planning ..> avoider : uses
-action ..> watchdog : uses
-perception ..> hw : read_distance_cm()
-action ..> hw : set_wheel_speeds() / stop()
+controller ..> governor : uses
+planner ..> reactive : uses
+controller ..> hw : set_motor_power() / stop()\nread_distance_cm() / read_greyscale()
+controller ..> msgs
+planner ..> msgs
 
 fake ..|> hw
 adapter ..|> hw
 
 adapter --> sonar
+adapter --> grey
 adapter --> servo
 adapter --> motors
 

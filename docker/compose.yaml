@@ -12,5 +12,13 @@ services:
     devices:
       - /dev/i2c-1:/dev/i2c-1
       - /dev/gpiomem:/dev/gpiomem
+      - /dev/gpiochip0:/dev/gpiochip0
+    volumes:
+      # rosbag2 recordings (PICAR_RECORD=true) land here, next to this file's folder.
+      - ../data:/data
     environment:
       PICAR_HARDWARE: ${PICAR_HARDWARE:-picar4wd}
+      PICAR_RECORD: ${PICAR_RECORD:-false}
+      # Pi 3 Model B+ board revision (from /proc/cpuinfo on the host). The container cannot read
+      # /proc/device-tree, so rpi-lgpio needs it here.
+      RPI_LGPIO_REVISION: a020d3

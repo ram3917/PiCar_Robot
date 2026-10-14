@@ -56,14 +56,19 @@ One container, started by Docker Compose:
 | Base | `ros:jazzy-ros-base` | ROS 2 Jazzy |
 | `network_mode` | `host` | ROS 2 discovery from other machines on the network |
 | `restart` | `unless-stopped` | Stack comes back after a power cycle |
-| Devices | `/dev/i2c-1`, `/dev/gpiomem` | HAT access without `privileged` |
+| Devices | `/dev/i2c-1`, `/dev/gpiomem`, `/dev/gpiochip0` | HAT access without `privileged`; `rpi-lgpio` drives the pins through the GPIO chip |
+| `RPI_LGPIO_REVISION` | `a020d3` (Pi 3 Model B+) | The container cannot read `/proc/device-tree`, so `rpi-lgpio` needs the board revision |
+| Volume | `../data` mounted at `/data` | rosbag2 recordings when `PICAR_RECORD=true` |
 
-The container's entrypoint launches the perception, planning and action nodes. The robot
-boots `DISARMED`; arm it with the `/arm` service.
+The container's entrypoint launches the controller and motion planner nodes. The robot
+boots `DISARMED`; arm it with the `/arm` service (served by the controller).
 
 ## Pi prerequisites
 
 - 64-bit Raspberry Pi OS (`uname -m` prints `aarch64`)
 - Docker with the compose plugin, and the user in the `docker` group
-- I2C enabled (`raspi-config`)
+- I2C enabled **permanently**: `dtparam=i2c_arm=on` uncommented in `/boot/firmware/config.txt`
+  (or `sudo raspi-config nonint do_i2c 0`). `dtparam i2c_arm=on` enables it only until the next
+  reboot. `/dev/i2c-1` must exist, and `sudo i2cdetect -y 1` should show `14` (the HAT)
+- `/dev/gpiochip0` present (`ls -l /dev/gpiochip0`)
 - Read access to the GHCR package (public package, or a read token)

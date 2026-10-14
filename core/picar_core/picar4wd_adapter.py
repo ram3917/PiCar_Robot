@@ -2,17 +2,21 @@
 
 Only works on the robot. The library is imported when the adapter is created, never at
 module import, so `picar_core` stays importable on machines without it.
+
+The library does its hardware setup at import (HAT reset, GPIO claims, PWM writes) and is not
+safe to use from two processes, so exactly one process may create this adapter.
 """
 
 from __future__ import annotations
 
 import math
 from types import ModuleType
+from typing import Sequence, Tuple
+
+from picar_core.motors import validate_motor_powers
 
 # Motor numbers as picar-4wd names them: 1 left front, 2 right front, 3 left rear, 4 right rear.
-LEFT_MOTORS = (1, 3)
-RIGHT_MOTORS = (2, 4)
-MAX_POWER = 100
+# This is also the order of `MotorPowers`, so power i drives motor i + 1.
 
 
 def _import_library() -> ModuleType:
@@ -27,24 +31,17 @@ class Picar4WDHardware:
     Args:
         fc: the `picar_4wd` module. Imported when not given; tests pass a stand-in.
 
-    The library maps any non-zero power to a PWM duty of 50-100 %, so the lowest speeds
-    are not gentler than the smallest real one. Tune `cruise_speed` on the robot.
+    The library maps any non-zero power to a PWM duty of 50-100 %, so the lowest powers
+    are not gentler than the smallest real one.
     """
 
     def __init__(self, fc: ModuleType | None = None) -> None:
         self._fc = fc if fc is not None else _import_library()
 
-    def set_wheel_speeds(self, left: float, right: float) -> None:
-        for name, value in (("left", left), ("right", right)):
-            # Written so that NaN fails the check too.
-            if not -1.0 <= value <= 1.0:
-                raise ValueError(f"{name} wheel speed {value!r} is outside [-1.0, 1.0]")
-        left_power = round(left * MAX_POWER)
-        right_power = round(right * MAX_POWER)
-        for motor in LEFT_MOTORS:
-            self._fc.set_motor_power(motor, left_power)
-        for motor in RIGHT_MOTORS:
-            self._fc.set_motor_power(motor, right_power)
+    def set_motor_power(self, powers: Sequence[int]) -> None:
+        # Validated first, so a bad value moves no motor.
+        for motor, power in enumerate(validate_motor_powers(powers), start=1):
+            self._fc.set_motor_power(motor, power)
 
     def stop(self) -> None:
         self._fc.stop()
@@ -55,6 +52,10 @@ class Picar4WDHardware:
         if distance is None or not math.isfinite(distance) or distance < 0:
             return None
         return float(distance)
+
+    def read_greyscale(self) -> Tuple[int, int, int]:
+        left, middle, right = self._fc.get_grayscale_list()
+        return int(left), int(middle), int(right)
 
     def set_servo_angle(self, deg: float) -> None:
         if not math.isfinite(deg):

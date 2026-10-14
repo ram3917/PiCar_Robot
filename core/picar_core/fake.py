@@ -5,13 +5,14 @@ from __future__ import annotations
 import math
 from collections import deque
 from dataclasses import dataclass
-from typing import Iterable, Union
+from typing import Iterable, Sequence, Tuple, Union
+
+from picar_core.motors import ZERO_POWER, MotorPowers, validate_motor_powers
 
 
 @dataclass(frozen=True)
-class SetWheelSpeeds:
-    left: float
-    right: float
+class SetMotorPower:
+    powers: MotorPowers
 
 
 @dataclass(frozen=True)
@@ -24,7 +25,7 @@ class SetServoAngle:
     deg: float
 
 
-HardwareCall = Union[SetWheelSpeeds, Stop, SetServoAngle]
+HardwareCall = Union[SetMotorPower, Stop, SetServoAngle]
 
 
 class FakeRobot:
@@ -32,36 +33,37 @@ class FakeRobot:
 
     Each `read_distance_cm` call consumes the next scripted value. Once the script runs
     out the last value repeats, so a simulated loop can keep running; with no script at
-    all every reading is ``None``.
+    all every reading is ``None``. `greyscale` is whatever the test sets it to.
     """
 
     def __init__(self, distances: Iterable[float | None] = ()) -> None:
         self._distances: deque[float | None] = deque(distances)
         self._last_distance: float | None = None
         self.commands: list[HardwareCall] = []
-        self.wheel_speeds: tuple[float, float] = (0.0, 0.0)
+        self.motor_powers: MotorPowers = ZERO_POWER
         self.servo_angle: float | None = None
+        self.greyscale: Tuple[int, int, int] = (0, 0, 0)
 
     def script_distances(self, distances: Iterable[float | None]) -> None:
         """Queue more readings after the ones already scripted."""
         self._distances.extend(distances)
 
-    def set_wheel_speeds(self, left: float, right: float) -> None:
-        for name, value in (("left", left), ("right", right)):
-            # Written so that NaN fails the check too.
-            if not -1.0 <= value <= 1.0:
-                raise ValueError(f"{name} wheel speed {value!r} is outside [-1.0, 1.0]")
-        self.wheel_speeds = (left, right)
-        self.commands.append(SetWheelSpeeds(left, right))
+    def set_motor_power(self, powers: Sequence[int]) -> None:
+        validated = validate_motor_powers(powers)
+        self.motor_powers = validated
+        self.commands.append(SetMotorPower(validated))
 
     def stop(self) -> None:
-        self.wheel_speeds = (0.0, 0.0)
+        self.motor_powers = ZERO_POWER
         self.commands.append(Stop())
 
     def read_distance_cm(self) -> float | None:
         if self._distances:
             self._last_distance = self._distances.popleft()
         return self._last_distance
+
+    def read_greyscale(self) -> Tuple[int, int, int]:
+        return self.greyscale
 
     def set_servo_angle(self, deg: float) -> None:
         if not math.isfinite(deg):
@@ -71,4 +73,4 @@ class FakeRobot:
 
     @property
     def is_stopped(self) -> bool:
-        return self.wheel_speeds == (0.0, 0.0)
+        return self.motor_powers == ZERO_POWER

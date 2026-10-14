@@ -1,6 +1,6 @@
 #!/bin/bash
 # Runs the picar_ros tests (ROS nodes and the launch file) in the dev container.
-# Builds picar_ros first so the launch test runs the current entry points.
+# Builds picar_interfaces and picar_ros first so the launch test runs the current entry points.
 # The pure-Python core tests are separate: uv run --package picar-core pytest core
 #
 #   scripts/test_ros.sh              # all ROS tests
@@ -14,7 +14,7 @@ repo="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck disable=SC1091
 source /opt/ros/jazzy/setup.bash
 cd "${repo}/ros"
-colcon build --symlink-install --packages-select picar_ros
+colcon build --symlink-install --packages-select picar_interfaces picar_ros
 # shellcheck disable=SC1091
 source "${repo}/ros/install/setup.bash"
 

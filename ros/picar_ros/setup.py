@@ -4,7 +4,7 @@ package_name = "picar_ros"
 
 setup(
     name=package_name,
-    version="0.0.0",
+    version="0.2.0",
     packages=find_packages(exclude=["test"]),
     data_files=[
         ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
@@ -15,13 +15,12 @@ setup(
     install_requires=["setuptools"],
     tests_require=["pytest"],
     zip_safe=True,
-    description="ROS 2 nodes (perception, planning, action) for the PiCar-4WD robot.",
+    description="ROS 2 controller and motion planner nodes for the PiCar-4WD robot.",
     license="Apache-2.0",
     entry_points={
         "console_scripts": [
-            "perception_node = picar_ros.perception_node:main",
-            "planning_node = picar_ros.planning_node:main",
-            "action_node = picar_ros.action_node:main",
+            "controller_node = picar_ros.controller_node:main",
+            "motion_planner_node = picar_ros.motion_planner_node:main",
         ],
     },
 )
