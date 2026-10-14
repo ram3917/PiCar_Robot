@@ -2,18 +2,21 @@
 
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
+from typing import Protocol, Sequence, Tuple, runtime_checkable
 
 
 @runtime_checkable
 class RobotHardware(Protocol):
-    """Motors, ultrasonic sensor and sensor servo of a skid-steer robot.
+    """Motors, ultrasonic sensor, greyscale sensors and sensor servo of a 4-motor robot.
 
     Implementations must not raise for a bad sensor reading; they report it as ``None``.
     """
 
-    def set_wheel_speeds(self, left: float, right: float) -> None:
-        """Drive each side at a normalised speed in ``[-1.0, 1.0]``; negative is reverse."""
+    def set_motor_power(self, powers: Sequence[int]) -> None:
+        """Drive the four motors (left front, right front, left rear, right rear).
+
+        Each power is an int in ``[-100, 100]``; negative is reverse.
+        """
         ...
 
     def stop(self) -> None:
@@ -22,6 +25,10 @@ class RobotHardware(Protocol):
 
     def read_distance_cm(self) -> float | None:
         """Distance to the nearest obstacle in centimetres, or ``None`` if the reading is invalid."""
+        ...
+
+    def read_greyscale(self) -> Tuple[int, int, int]:
+        """The three downward greyscale ADC readings."""
         ...
 
     def set_servo_angle(self, deg: float) -> None:

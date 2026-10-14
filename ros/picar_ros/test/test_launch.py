@@ -1,6 +1,6 @@
-"""End to end: picar.launch.py with fake hardware brings up all three nodes, and arming drives.
+"""End to end: picar.launch.py with fake hardware brings up both nodes, and arming drives.
 
-Needs the package built and sourced (ros/install/setup.bash), since it launches the installed
+Needs the packages built and sourced (ros/install/setup.bash), since it launches the installed
 entry points.
 """
 
@@ -13,12 +13,10 @@ import launch_testing.asserts
 import pytest
 import rclpy
 from ament_index_python.packages import get_package_share_directory
-from geometry_msgs.msg import Twist
 from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from sensor_msgs.msg import Range
-from std_msgs.msg import String
+from picar_interfaces.msg import MotionPlan, SensorFrame
 from std_srvs.srv import SetBool
 
 
@@ -43,10 +41,9 @@ class TestRunningStack(unittest.TestCase):
     def setUpClass(cls):
         rclpy.init()
         cls.node = rclpy.create_node("launch_probe")
-        cls.ranges, cls.states, cls.cmds = [], [], []
-        cls.node.create_subscription(Range, "/ultrasonic/range", cls.ranges.append, 10)
-        cls.node.create_subscription(String, "/robot_state", cls.states.append, 10)
-        cls.node.create_subscription(Twist, "/cmd_vel", cls.cmds.append, 10)
+        cls.frames, cls.plans = [], []
+        cls.node.create_subscription(SensorFrame, "/controller/sensor_frame", cls.frames.append, 10)
+        cls.node.create_subscription(MotionPlan, "/planner/motion_plan", cls.plans.append, 10)
 
     @classmethod
     def tearDownClass(cls):
@@ -59,21 +56,22 @@ class TestRunningStack(unittest.TestCase):
             rclpy.spin_once(self.node, timeout_sec=0.05)
         return predicate()
 
-    def test_1_all_nodes_come_up(self):
+    def test_1_both_nodes_come_up(self):
         self.assertTrue(
             self._spin_until(
-                lambda: {"perception", "planning", "action"} <= set(self.node.get_node_names())
+                lambda: {"controller", "motion_planner"} <= set(self.node.get_node_names())
             ),
             f"nodes up: {self.node.get_node_names()}",
         )
 
-    def test_2_perception_publishes_the_fake_range(self):
-        self.assertTrue(self._spin_until(lambda: self.ranges))
-        self.assertAlmostEqual(self.ranges[-1].range, 1.0)  # params.yaml: 100 cm
+    def test_2_controller_publishes_the_fake_range(self):
+        self.assertTrue(self._spin_until(lambda: self.frames))
+        self.assertAlmostEqual(self.frames[-1].range_m, 1.0, places=3)  # params.yaml: 100 cm
 
-    def test_3_planning_boots_disarmed(self):
-        self.assertTrue(self._spin_until(lambda: self.states))
-        self.assertEqual(self.states[-1].data, "DISARMED")
+    def test_3_the_robot_boots_disarmed_and_nothing_is_planned(self):
+        self.assertTrue(self._spin_until(lambda: self.frames))
+        self.assertFalse(self.frames[-1].armed)
+        self.assertEqual(self.plans, [])
 
     def test_4_arming_starts_cruising(self):
         client = self.node.create_client(SetBool, "/arm")
@@ -82,8 +80,11 @@ class TestRunningStack(unittest.TestCase):
         self.assertTrue(self._spin_until(future.done))
         self.assertTrue(future.result().success, future.result().message)
 
-        self.assertTrue(self._spin_until(lambda: self.cmds and self.cmds[-1].linear.x > 0.0))
-        self.assertEqual(self.states[-1].data, "CRUISE")
+        self.assertTrue(self._spin_until(lambda: self.plans))
+        self.assertTrue(
+            self._spin_until(lambda: self.frames and self.frames[-1].last_motor_power[0] > 0)
+        )
+        self.assertTrue(self.frames[-1].armed)
 
 
 @launch_testing.post_shutdown_test()

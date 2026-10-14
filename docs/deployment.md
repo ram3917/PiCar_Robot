@@ -2,8 +2,10 @@
 
 Diagram: [deployment.puml](deployment.puml).
 
-> **Status:** this describes the planned pipeline. The image and `compose.yaml` arrive with
-> MVP-11, CI with MVP-12, `update.sh` with MVP-13 and the Pi setup notes with MVP-14.
+> **Status:** the registry pipeline below (CI, GHCR, `update.sh`) is planned and not set up.
+> Today the image is built on the dev machine and copied to the Pi by hand, as described in
+> [Deploy to the Pi](../README.md#deploy-to-the-pi). The sections on what runs on the Pi and the
+> Pi prerequisites apply either way.
 
 ## Pipeline
 
@@ -46,6 +48,24 @@ IMAGE_TAG=v0.1.0 ./scripts/update.sh
 
 Any pushed tag works, including `sha-<short>`.
 
+With the manual flow, keep the previous image loaded on the Pi (`docker images` lists it) and
+point compose at it:
+
+```bash
+cd ~/docker
+echo "IMAGE_TAG=<old tag>" > .env
+docker compose up -d --force-recreate --pull never
+```
+
+Recordings and parameters are not part of the image, so a rollback keeps them.
+
+## Recording data
+
+The `data/` folder next to `docker/` is mounted at `/data` in the container. To record the sensor
+frames and plans with rosbag2, set `PICAR_RECORD=true` in `docker/.env` (next to `IMAGE_TAG`) and
+recreate the container. Each start writes a new `picar_<timestamp>` folder, and the folder is
+ignored by git.
+
 ## What runs on the Pi
 
 One container, started by Docker Compose:
@@ -56,14 +76,19 @@ One container, started by Docker Compose:
 | Base | `ros:jazzy-ros-base` | ROS 2 Jazzy |
 | `network_mode` | `host` | ROS 2 discovery from other machines on the network |
 | `restart` | `unless-stopped` | Stack comes back after a power cycle |
-| Devices | `/dev/i2c-1`, `/dev/gpiomem` | HAT access without `privileged` |
+| Devices | `/dev/i2c-1`, `/dev/gpiomem`, `/dev/gpiochip0` | HAT access without `privileged`; `rpi-lgpio` drives the pins through the GPIO chip |
+| `RPI_LGPIO_REVISION` | `a020d3` (Pi 3 Model B+) | The container cannot read `/proc/device-tree`, so `rpi-lgpio` needs the board revision |
+| Volume | `../data` mounted at `/data` | rosbag2 recordings when `PICAR_RECORD=true` |
 
-The container's entrypoint launches the perception, planning and action nodes. The robot
-boots `DISARMED`; arm it with the `/arm` service.
+The container's entrypoint launches the controller and motion planner nodes. The robot
+boots `DISARMED`; arm it with the `/arm` service (served by the controller).
 
 ## Pi prerequisites
 
 - 64-bit Raspberry Pi OS (`uname -m` prints `aarch64`)
 - Docker with the compose plugin, and the user in the `docker` group
-- I2C enabled (`raspi-config`)
+- I2C enabled **permanently**: `dtparam=i2c_arm=on` uncommented in `/boot/firmware/config.txt`
+  (or `sudo raspi-config nonint do_i2c 0`). `dtparam i2c_arm=on` enables it only until the next
+  reboot. `/dev/i2c-1` must exist, and `sudo i2cdetect -y 1` should show `14` (the HAT)
+- `/dev/gpiochip0` present (`ls -l /dev/gpiochip0`)
 - Read access to the GHCR package (public package, or a read token)

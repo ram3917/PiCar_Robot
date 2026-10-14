@@ -11,9 +11,10 @@ from picar_core.picar4wd_adapter import Picar4WDHardware
 class FakeLibrary:
     """Stands in for the `picar_4wd` module, recording what the adapter asks of it."""
 
-    def __init__(self, distance=50.0):
+    def __init__(self, distance=50.0, greyscale=(1, 2, 3)):
         self.calls = []
         self.distance = distance
+        self.greyscale = greyscale
         self.us = SimpleNamespace(get_distance=lambda: self.distance)
         self.servo = SimpleNamespace(set_angle=lambda angle: self.calls.append(("servo", angle)))
 
@@ -22,6 +23,9 @@ class FakeLibrary:
 
     def stop(self):
         self.calls.append(("stop",))
+
+    def get_grayscale_list(self):
+        return list(self.greyscale)
 
 
 def test_adapter_satisfies_the_hardware_protocol():
@@ -34,25 +38,26 @@ def test_importing_picar_core_does_not_import_the_library():
     assert "picar_4wd" not in sys.modules
 
 
-def test_left_side_drives_motors_1_and_3_and_right_side_drives_2_and_4():
+def test_each_power_drives_the_motor_with_the_same_number():
     fc = FakeLibrary()
 
-    Picar4WDHardware(fc).set_wheel_speeds(0.5, -0.25)
+    # Left front, right front, left rear, right rear = motors 1, 2, 3, 4.
+    Picar4WDHardware(fc).set_motor_power((50, -25, 30, -10))
 
     assert fc.calls == [
         ("motor", 1, 50),
-        ("motor", 3, 50),
         ("motor", 2, -25),
-        ("motor", 4, -25),
+        ("motor", 3, 30),
+        ("motor", 4, -10),
     ]
 
 
-def test_full_speed_maps_to_full_power():
+def test_full_power_maps_through_unchanged():
     fc = FakeLibrary()
 
-    Picar4WDHardware(fc).set_wheel_speeds(-1.0, 1.0)
+    Picar4WDHardware(fc).set_motor_power((-100, 100, -100, 100))
 
-    assert [c[2] for c in fc.calls] == [-100, -100, 100, 100]
+    assert [c[2] for c in fc.calls] == [-100, 100, -100, 100]
 
 
 def test_stop_delegates_to_the_library():
@@ -70,6 +75,14 @@ def test_a_valid_distance_is_returned_as_a_float():
 @pytest.mark.parametrize("code", [-1, -2, -0.5, math.nan, math.inf])
 def test_library_error_codes_and_non_finite_values_read_as_none(code):
     assert Picar4WDHardware(FakeLibrary(distance=code)).read_distance_cm() is None
+
+
+def test_greyscale_is_the_librarys_three_adc_values():
+    assert Picar4WDHardware(FakeLibrary(greyscale=(100, 2000, 300))).read_greyscale() == (
+        100,
+        2000,
+        300,
+    )
 
 
 def test_servo_angle_is_passed_to_the_library():
@@ -90,11 +103,13 @@ def test_non_finite_servo_angle_is_rejected(deg):
     assert fc.calls == []
 
 
-@pytest.mark.parametrize("left, right", [(1.01, 0.0), (0.0, -1.5), (math.nan, 0.0)])
-def test_out_of_range_wheel_speeds_are_rejected_before_any_motor_moves(left, right):
+@pytest.mark.parametrize(
+    "powers", [(101, 0, 0, 0), (0, -150, 0, 0), (1, 2, 3), (0.5, 0, 0, 0), (math.nan, 0, 0, 0)]
+)
+def test_bad_powers_are_rejected_before_any_motor_moves(powers):
     fc = FakeLibrary()
 
     with pytest.raises(ValueError):
-        Picar4WDHardware(fc).set_wheel_speeds(left, right)
+        Picar4WDHardware(fc).set_motor_power(powers)
 
     assert fc.calls == []

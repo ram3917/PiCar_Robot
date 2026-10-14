@@ -11,11 +11,9 @@ from typing import Callable
 
 import pytest
 import rclpy
-from geometry_msgs.msg import Twist
+from picar_interfaces.msg import MotionPlan, MotorPower, SensorFrame
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
-from sensor_msgs.msg import Range
-from std_msgs.msg import String
 from std_srvs.srv import SetBool
 
 # Keep test traffic off the network and away from a robot stack running on the default domain.
@@ -103,24 +101,44 @@ def ros():
     harness.close()
 
 
-class RangeFeed:
-    """Publishes /ultrasonic/range from the probe at a steady rate; ``distance_m`` can change."""
+class FrameFeed:
+    """Publishes /controller/sensor_frame from the probe at a steady rate.
 
-    def __init__(self, harness: RosHarness, distance_m: float, rate_hz: float = 20.0) -> None:
-        self.distance_m = distance_m
-        self._pub = harness.publisher(Range, "/ultrasonic/range")
+    ``range_m`` and ``armed`` can change while it runs.
+    """
+
+    def __init__(
+        self,
+        harness: RosHarness,
+        range_m: float,
+        armed: bool = True,
+        rate_hz: float = 33.0,
+    ) -> None:
+        self.range_m = range_m
+        self.armed = armed
+        self._pub = harness.publisher(SensorFrame, "/controller/sensor_frame")
         self._timer = harness.probe.create_timer(1.0 / rate_hz, self._publish)
 
     def _publish(self) -> None:
-        msg = Range()
-        msg.radiation_type = Range.ULTRASOUND
-        msg.min_range = 0.02
-        msg.max_range = 4.0
-        msg.range = self.distance_m
+        msg = SensorFrame()
+        msg.range_m = float(self.range_m)
+        msg.range_valid = not (math.isnan(self.range_m) or self.range_m == -math.inf)
+        msg.armed = self.armed
         self._pub.publish(msg)
 
     def stop(self) -> None:
         self._timer.cancel()
+
+
+def plan_msg(*steps: tuple[int, int, int, int], step_s: float = 0.2) -> MotionPlan:
+    """A MotionPlan message with the given per-step motor powers."""
+    msg = MotionPlan()
+    msg.step_s = step_s
+    for powers in steps:
+        step = MotorPower()
+        step.power = list(powers)
+        msg.steps.append(step)
+    return msg
 
 
 def call_arm(harness: RosHarness, armed: bool) -> SetBool.Response:
@@ -131,12 +149,3 @@ def call_arm(harness: RosHarness, armed: bool) -> SetBool.Response:
     return future.result()
 
 
-def twist(linear: float = 0.0, angular: float = 0.0) -> Twist:
-    msg = Twist()
-    msg.linear.x = linear
-    msg.angular.z = angular
-    return msg
-
-
-def states(messages: list[String]) -> list[str]:
-    return [msg.data for msg in messages]

@@ -16,7 +16,7 @@ uv pip install --system --break-system-packages -e "${repo}/core"
 # shellcheck disable=SC1091
 source /opt/ros/jazzy/setup.bash
 cd "${repo}/ros"
-colcon build --symlink-install --packages-select picar_ros
+colcon build --symlink-install --packages-select picar_interfaces picar_ros
 
 echo "Dev container ready. Tests: uv run --package picar-core pytest core (core), scripts/test_ros.sh (ROS)"
 echo "Nodes: source ros/install/setup.bash, then ros2 launch picar_ros picar.launch.py hardware:=fake"

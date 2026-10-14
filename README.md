@@ -5,30 +5,33 @@ Raspberry Pi 3B+, running **ROS 2 Jazzy** inside Docker.
 
 The robot's logic is split in two layers:
 
-- **`picar_core`** — pure Python, no ROS imports. Hardware interface, state machine and
-  watchdog. Runs and is tested on any machine, including Windows.
-- **`picar_ros`** — a thin ROS 2 layer of three nodes (perception → planning → action)
-  that wraps the core.
+- **`picar_core`** — pure Python, no ROS imports. Hardware interface, reactive planner, and the
+  plan playback with its safety limits. Runs and is tested on any machine, including Windows.
+- **`picar_ros`** — a thin ROS 2 layer of two nodes, a **controller** that owns the hardware and
+  a **motion planner**, wrapping the core. `picar_interfaces` holds the messages between them.
 
-## MVP scope
+## v0.2 scope
 
-Drive around a room on its own, using only the ultrasonic sensor to avoid obstacles.
+Drive around a room on its own, using only the ultrasonic sensor to avoid obstacles, with the
+planner behind a fixed message contract so a learned model can replace it later.
 
 **In scope**
 
-- Reactive avoidance: cruise → stop → reverse → turn → cruise
-- Ultrasonic sensor fixed facing forward (servo locked)
+- Reactive avoidance planned as a 2 s motor plan: cruise → stop → reverse → turn → cruise
+- Ultrasonic sensor fixed facing forward (servo locked), a sensor frame about every 30 ms
+- The controller is the only process that touches the hardware, and enforces the safety limits
 - Arm / disarm over a ROS service; the robot always boots **disarmed**
-- Safety stops: stale or invalid range → fault and stop; no `/cmd_vel` → motors stop
-- Manual driving with `teleop_twist_keyboard` while disarmed
+- Safety stops: disarm, no new plan for 500 ms, forward range under 10 cm, no valid range for 150 ms
+- rosbag2 recording of sensor frames and plans (`PICAR_RECORD=true`)
 - One image, built for `linux/arm64` on the dev machine and copied to the Pi by hand
 - Runs without a robot (`hardware:=fake`) for development and smoke tests
 
-**Out of scope for the MVP**
+**Out of scope for v0.2**
 
-- Greyscale sensor, edge/cliff detection, line following
+- Edge/cliff stops and line following (the greyscale values are in every frame, but unused)
 - Wheel-speed odometry, `/odom`, goal-seeking
-- Machine-learned policies
+- The machine-learned planner itself (only the contract that lets it be swapped in)
+- Manual driving with `teleop_twist_keyboard` (dropped: the controller takes plans only)
 - Unity teleop / digital twin / simulator
 - Camera stream
 - Servo sweeping, mapping, SLAM, IMU
@@ -39,29 +42,32 @@ Drive around a room on its own, using only the ultrasonic sensor to avoid obstac
 
 | Node | Role | Subscribes | Publishes / serves |
 |---|---|---|---|
-| perception | Reads the ultrasonic sensor | — | `/ultrasonic/range` |
-| planning | Runs the avoidance state machine | `/ultrasonic/range` | `/cmd_vel`, `/robot_state`, service `/arm` |
-| action | Drives the motors, enforces the command watchdog | `/cmd_vel` | — |
+| controller | Owns all hardware, plays plans onto the motors, enforces safety | `/planner/motion_plan` | `/controller/sensor_frame`, service `/arm` |
+| motion_planner | Plans the next 2 s from the latest sensor frame | `/controller/sensor_frame` | `/planner/motion_plan` |
 
 ### Topics and services
 
 | Name | Kind | Type | Notes |
 |---|---|---|---|
-| `/ultrasonic/range` | topic | `sensor_msgs/Range` | 10 Hz, `radiation_type=ULTRASOUND`; invalid readings are `inf`/NaN (REP 117) |
-| `/cmd_vel` | topic | `geometry_msgs/Twist` | 20 Hz while armed (zeros when stopped); planning publishes nothing while disarmed |
-| `/robot_state` | topic | `std_msgs/String` | `DISARMED`, `CRUISE`, `STOP`, `REVERSE`, `TURN`, `FAULT` |
-| `/arm` | service | `std_srvs/SetBool` | `true` arms, `false` disarms |
+| `/controller/sensor_frame` | topic | `picar_interfaces/SensorFrame` | About every 30 ms (a target): forward range, servo angle, greyscale[3], last motor power, armed |
+| `/planner/motion_plan` | topic | `picar_interfaces/MotionPlan` | 5-10 Hz: 10 steps of 0.2 s, each four motor powers in `[-100, 100]`; nothing is published while disarmed |
+| `/arm` | service | `std_srvs/SetBool` | `true` arms, `false` disarms; served by the controller |
+
+See [docs/architecture.md](docs/architecture.md) for the message fields and the safety limits.
 
 ### Parameters
 
 | Parameter | Node | Meaning |
 |---|---|---|
-| `hardware` | perception, action | `fake` or `picar4wd` — which hardware adapter to use |
-| `stop_distance_cm` | planning | Obstacle closer than this triggers the stop/reverse/turn sequence |
-| `cruise_speed` | planning | Forward speed while cruising |
-| `turn_duration_s` | planning | How long the turn lasts |
-| `range_stale_ms` | planning | Range older than this is treated as a fault |
-| `cmd_timeout_ms` | action | No `/cmd_vel` for this long → motors stop (default 500) |
+| `hardware` | controller | `fake` or `picar4wd` — which hardware adapter to use |
+| `hard_stop_cm` | controller | Forward drive stops closer than this (default 10) |
+| `range_stale_ms` | controller | No valid range for this long stops forward drive (default 150) |
+| `plan_timeout_ms` | controller | No new plan for this long stops all motors (default 500) |
+| `rate_hz` | motion_planner | Plans per second (default 10) |
+| `stop_distance_cm` | motion_planner | Obstacle closer than this starts the stop/reverse/turn manoeuvre |
+| `cruise_speed`, `turn_duration_s`, ... | motion_planner | Speeds and manoeuvre timing |
+
+The full list is in [docs/architecture.md](docs/architecture.md).
 
 ## Repository layout
 
@@ -96,8 +102,8 @@ with the ROS Python, separate from the core tests above. They cover each node wi
 hardware and launch the whole stack with `picar.launch.py`.
 
 ```bash
-scripts/test_ros.sh              # builds picar_ros, then runs its tests
-scripts/test_ros.sh -k planning  # extra arguments go to pytest
+scripts/test_ros.sh                   # builds picar_interfaces and picar_ros, then runs the tests
+scripts/test_ros.sh -k motion_planner # extra arguments go to pytest
 ```
 
 ### Deploy to the Pi
@@ -110,7 +116,8 @@ SSH login (for example `pi@192.168.1.50`).
 
 - Raspberry Pi 3B+ running 64-bit Raspberry Pi OS (Lite)
 - Docker with the compose plugin, and your user in the `docker` group
-- I2C enabled (`sudo raspi-config`, Interface Options)
+- I2C enabled permanently: `dtparam=i2c_arm=on` in `/boot/firmware/config.txt` (or
+  `sudo raspi-config nonint do_i2c 0`), then a reboot. `/dev/i2c-1` must exist
 - Docker Desktop running on the dev machine, with buildx available
 
 **1. Check the Pi is ready** (on the Pi, from the repo directory)
@@ -124,16 +131,16 @@ SSH login (for example `pi@192.168.1.50`).
 ```powershell
 docker buildx create --use --name picar 2>$null
 docker buildx build --platform linux/arm64 -f docker/Dockerfile `
-    -t ghcr.io/ram3917/picar_robot:latest --load .
+    -t ghcr.io/ram3917/picar_robot:0.2.0 --load .
 ```
 
-The tag matches the image name in `docker/compose.yaml`, so compose uses it without edits.
+The image name matches `docker/compose.yaml`; compose picks the tag from `IMAGE_TAG` (step 6).
 Building for arm64 on an x86 machine runs under emulation and can take a long time.
 
 **3. Save the image to a file and copy it to the Pi**
 
 ```powershell
-docker save -o picar.tar ghcr.io/ram3917/picar_robot:latest
+docker save -o picar.tar ghcr.io/ram3917/picar_robot:0.2.0
 scp picar.tar PI_USER@PI_HOST:~/
 ```
 
@@ -155,6 +162,8 @@ Copy the `docker/` folder, or check out this branch with `git pull`. The Pi need
 
 ```bash
 cd docker
+echo "IMAGE_TAG=0.2.0" > .env           # which image tag compose runs
+mkdir -p ../data                      # rosbag2 recordings are written here
 docker compose up -d --pull never     # use the local image; do not contact the registry
 docker compose ps                     # the picar container should be "running"
 docker compose logs -f picar          # the robot should start DISARMED
@@ -173,18 +182,18 @@ See [docs/deployment.md](docs/deployment.md) for the planned registry-based pipe
 
 - [Architecture](docs/architecture.md)
 - [Deployment](docs/deployment.md)
-- State machine: [docs/state-machine.puml](docs/state-machine.puml)
+- Planner manoeuvre: [docs/state-machine.puml](docs/state-machine.puml)
 
 ## Roadmap
 
 Work is tracked as [GitHub issues](https://github.com/ram3917/PiCar_Robot/issues).
 
 1. **MVP** — ultrasonic obstacle avoidance on ROS 2 in Docker, released as `v0.1.0`
-2. **Post-MVP**
+2. **v0.2** — controller and motion planner nodes, one hardware owner, swappable planner
+3. **Later**
    - Greyscale sensor: edge/cliff detection, then line following
    - Wheel-speed odometry and relative goals (`/goal_pose`)
-   - ML goal-seeking policy behind a safety supervisor
-   - rosbag2 data logging
+   - ML planner node behind the same message contract
    - Unity teleop, digital twin and simulator
    - Camera stream
 

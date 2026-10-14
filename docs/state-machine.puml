@@ -1,30 +1,38 @@
 @startuml state-machine
-title Planning node - avoidance state machine
+title MotionPlanner - avoidance manoeuvre (what the 10-step plan contains)
 
-[*] --> DISARMED : boot
+[*] --> Disarmed : boot
 
-DISARMED : nothing published on /cmd_vel
-CRUISE : forward at cruise_speed
-STOP : zero command
-REVERSE : backing away
-TURN : turning on the spot
-FAULT : zero command
+Disarmed : no plan published
+Cruise : 10 cruise steps
+Stop : zero power, stop_duration_s
+Reverse : reverse_speed, reverse_duration_s
+Turn : spin counter-clockwise, turn_duration_s
+Fault : plan of zeros
 
-DISARMED --> CRUISE : /arm true
-CRUISE --> STOP : range < stop_distance_cm
-STOP --> REVERSE : stopped
-REVERSE --> TURN : reversed
-TURN --> CRUISE : after turn_duration_s
+Disarmed --> Cruise : frame.armed
+Cruise --> Stop : range < stop_distance_cm
+Stop --> Reverse : after stop_duration_s
+Reverse --> Turn : after reverse_duration_s
+Turn --> Cruise : after turn_duration_s
 
-CRUISE --> FAULT : range invalid or\nolder than range_stale_ms
-STOP --> FAULT : range invalid or stale
-REVERSE --> FAULT : range invalid or stale
-TURN --> FAULT : range invalid or stale
+Cruise --> Fault : range invalid or\nframe older than frame_stale_ms
+Fault --> Cruise : valid fresh frame
 
-CRUISE --> DISARMED : /arm false
-STOP --> DISARMED : /arm false
-REVERSE --> DISARMED : /arm false
-TURN --> DISARMED : /arm false
-FAULT --> DISARMED : /arm false
+Cruise --> Disarmed : not frame.armed
+Stop --> Disarmed : not frame.armed
+Reverse --> Disarmed : not frame.armed
+Turn --> Disarmed : not frame.armed
+
+note right of Turn
+  Stop, Reverse and Turn are one committed manoeuvre.
+  The planner keeps to it on every replan,
+  whatever the range says, until it ends.
+end note
+
+note bottom of Cruise
+  The controller applies its own limits on top
+  (hard stop, blind stop, plan heartbeat), whatever the plan says.
+end note
 
 @enduml

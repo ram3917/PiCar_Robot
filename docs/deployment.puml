@@ -24,6 +24,6 @@ Developer --> update : ssh, optionally with IMAGE_TAG
 update --> compose : pull, then up -d
 ghcr --> compose : image for IMAGE_TAG\n(default latest)
 compose --> container : restart: unless-stopped
-container --> hat : /dev/i2c-1, /dev/gpiomem
+container --> hat : /dev/i2c-1, /dev/gpiomem,\n/dev/gpiochip0
 
 @enduml
