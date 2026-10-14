@@ -11,10 +11,15 @@ from typing import Callable
 
 import pytest
 import rclpy
-from picar_interfaces.msg import MotionPlan, MotorPower, SensorFrame
+from rclpy.duration import Duration
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
+from sensor_msgs.msg import Range
+from std_msgs.msg import Bool
 from std_srvs.srv import SetBool
+from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
+
+from picar_ros.interface import ARMED_QOS, ARMED_TOPIC, MOTOR_JOINTS, RANGE_TOPIC
 
 # Keep test traffic off the network and away from a robot stack running on the default domain.
 # Set before any rclpy.init, and inherited by the processes the launch test starts.
@@ -62,14 +67,14 @@ class RosHarness:
         self.executor.add_node(self.probe)
         return self.node
 
-    def record(self, msg_type, topic: str) -> list:
+    def record(self, msg_type, topic: str, qos=10) -> list:
         """Subscribe the probe to ``topic``; received messages are appended to the returned list."""
         messages = self.received.setdefault(topic, [])
-        self.probe.create_subscription(msg_type, topic, messages.append, 10)
+        self.probe.create_subscription(msg_type, topic, messages.append, qos)
         return messages
 
-    def publisher(self, msg_type, topic: str):
-        return self.probe.create_publisher(msg_type, topic, 10)
+    def publisher(self, msg_type, topic: str, qos=10):
+        return self.probe.create_publisher(msg_type, topic, qos)
 
     def spin_for(self, seconds: float) -> None:
         end = time.monotonic() + seconds
@@ -101,44 +106,41 @@ def ros():
     harness.close()
 
 
-class FrameFeed:
-    """Publishes /controller/sensor_frame from the probe at a steady rate.
+class RangeFeed:
+    """Publishes the controller's range and armed topics from the probe at a steady rate.
 
     ``range_m`` and ``armed`` can change while it runs.
     """
 
     def __init__(
-        self,
-        harness: RosHarness,
-        range_m: float,
-        armed: bool = True,
-        rate_hz: float = 33.0,
+        self, harness: RosHarness, range_m: float, armed: bool = True, rate_hz: float = 33.0
     ) -> None:
         self.range_m = range_m
         self.armed = armed
-        self._pub = harness.publisher(SensorFrame, "/controller/sensor_frame")
+        self._range_pub = harness.publisher(Range, RANGE_TOPIC)
+        self._armed_pub = harness.publisher(Bool, ARMED_TOPIC, ARMED_QOS)
         self._timer = harness.probe.create_timer(1.0 / rate_hz, self._publish)
 
     def _publish(self) -> None:
-        msg = SensorFrame()
-        msg.range_m = float(self.range_m)
-        msg.range_valid = not (math.isnan(self.range_m) or self.range_m == -math.inf)
-        msg.armed = self.armed
-        self._pub.publish(msg)
+        self._range_pub.publish(Range(range=float(self.range_m)))
+        self._armed_pub.publish(Bool(data=self.armed))
 
     def stop(self) -> None:
         self._timer.cancel()
 
 
-def plan_msg(*steps: tuple[int, int, int, int], step_s: float = 0.2) -> MotionPlan:
-    """A MotionPlan message with the given per-step motor powers."""
-    msg = MotionPlan()
-    msg.step_s = step_s
-    for powers in steps:
-        step = MotorPower()
-        step.power = list(powers)
-        msg.steps.append(step)
-    return msg
+def plan_msg(*steps: tuple[float, float, float, float], step_s: float = 0.2) -> JointTrajectory:
+    """A plan whose point ``i`` reaches ``steps[i]`` at ``(i + 1) * step_s`` seconds."""
+    return JointTrajectory(
+        joint_names=list(MOTOR_JOINTS),
+        points=[
+            JointTrajectoryPoint(
+                positions=[float(p) for p in powers],
+                time_from_start=Duration(seconds=(i + 1) * step_s).to_msg(),
+            )
+            for i, powers in enumerate(steps)
+        ],
+    )
 
 
 def call_arm(harness: RosHarness, armed: bool) -> SetBool.Response:

@@ -62,8 +62,8 @@ Recordings and parameters are not part of the image, so a rollback keeps them.
 ## Recording data
 
 The `data/` folder next to `docker/` is mounted at `/data` in the container. To record the sensor
-frames and plans with rosbag2, set `PICAR_RECORD=true` in `docker/.env` (next to `IMAGE_TAG`) and
-recreate the container. Each start writes a new `picar_<timestamp>` folder, and the folder is
+topics and plans with rosbag2, set `PICAR_RECORD=true` in `docker/.env` (next to `IMAGE_TAG`) and
+recreate the container. Each start writes a new `rosbag2_<timestamp>` folder, and the folder is
 ignored by git.
 
 ## What runs on the Pi

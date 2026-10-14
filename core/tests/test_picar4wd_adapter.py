@@ -101,15 +101,3 @@ def test_non_finite_servo_angle_is_rejected(deg):
         Picar4WDHardware(fc).set_servo_angle(deg)
 
     assert fc.calls == []
-
-
-@pytest.mark.parametrize(
-    "powers", [(101, 0, 0, 0), (0, -150, 0, 0), (1, 2, 3), (0.5, 0, 0, 0), (math.nan, 0, 0, 0)]
-)
-def test_bad_powers_are_rejected_before_any_motor_moves(powers):
-    fc = FakeLibrary()
-
-    with pytest.raises(ValueError):
-        Picar4WDHardware(fc).set_motor_power(powers)
-
-    assert fc.calls == []

@@ -2,7 +2,7 @@
 
     ros2 launch picar_ros picar.launch.py hardware:=fake
     ros2 launch picar_ros picar.launch.py hardware:=picar4wd
-    ros2 launch picar_ros picar.launch.py hardware:=picar4wd record:=true   # rosbag2 to /data
+    ros2 launch picar_ros picar.launch.py hardware:=picar4wd record:=true   # rosbag2 into /data
 """
 
 import os
@@ -11,13 +11,20 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, ExecuteProcess
 from launch.conditions import IfCondition
-from launch.substitutions import LaunchConfiguration, PythonExpression
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+
+from picar_ros.interface import (
+    ARMED_TOPIC,
+    GREYSCALE_TOPIC,
+    JOINT_STATES_TOPIC,
+    PLAN_TOPIC,
+    RANGE_TOPIC,
+)
 
 
 def generate_launch_description() -> LaunchDescription:
     params_file = os.path.join(get_package_share_directory("picar_ros"), "config", "params.yaml")
-    hardware = LaunchConfiguration("hardware")
 
     return LaunchDescription(
         [
@@ -29,18 +36,13 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument(
                 "record",
                 default_value="false",
-                description="Record the sensor frames and plans with rosbag2 into record_dir.",
-            ),
-            DeclareLaunchArgument(
-                "record_dir",
-                default_value="/data",
-                description="Folder the rosbag2 recording is written under.",
+                description="Record the sensor topics and plans with rosbag2 into /data.",
             ),
             Node(
                 package="picar_ros",
                 executable="controller_node",
                 name="controller",
-                parameters=[params_file, {"hardware": hardware}],
+                parameters=[params_file, {"hardware": LaunchConfiguration("hardware")}],
                 output="screen",
             ),
             Node(
@@ -50,16 +52,13 @@ def generate_launch_description() -> LaunchDescription:
                 parameters=[params_file],
                 output="screen",
             ),
+            # rosbag2 names each recording folder by the time it starts, inside cwd.
             ExecuteProcess(
                 cmd=[
                     "ros2", "bag", "record",
-                    "/controller/sensor_frame", "/planner/motion_plan",
-                    # rosbag2 refuses an existing folder, so each recording gets its own.
-                    "-o", PythonExpression([
-                        "'", LaunchConfiguration("record_dir"),
-                        "/picar_' + __import__('time').strftime('%Y%m%d_%H%M%S')",
-                    ]),
+                    RANGE_TOPIC, GREYSCALE_TOPIC, JOINT_STATES_TOPIC, ARMED_TOPIC, PLAN_TOPIC,
                 ],
+                cwd="/data",
                 condition=IfCondition(LaunchConfiguration("record")),
                 output="screen",
             ),

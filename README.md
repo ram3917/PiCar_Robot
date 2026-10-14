@@ -8,7 +8,7 @@ The robot's logic is split in two layers:
 - **`picar_core`** — pure Python, no ROS imports. Hardware interface, reactive planner, and the
   plan playback with its safety limits. Runs and is tested on any machine, including Windows.
 - **`picar_ros`** — a thin ROS 2 layer of two nodes, a **controller** that owns the hardware and
-  a **motion planner**, wrapping the core. `picar_interfaces` holds the messages between them.
+  a **motion planner**, wrapping the core. They talk over standard ROS messages.
 
 ## v0.2 scope
 
@@ -42,18 +42,22 @@ planner behind a fixed message contract so a learned model can replace it later.
 
 | Node | Role | Subscribes | Publishes / serves |
 |---|---|---|---|
-| controller | Owns all hardware, plays plans onto the motors, enforces safety | `/planner/motion_plan` | `/controller/sensor_frame`, service `/arm` |
-| motion_planner | Plans the next 2 s from the latest sensor frame | `/controller/sensor_frame` | `/planner/motion_plan` |
+| controller | Owns all hardware, plays plans onto the motors, enforces safety | `/planner/motion_plan` | `/controller/range`, `/controller/greyscale`, `/joint_states`, `/controller/armed`, service `/arm` |
+| motion_planner | Plans the next 2 s from the latest range | `/controller/range`, `/controller/armed` | `/planner/motion_plan` |
 
 ### Topics and services
 
 | Name | Kind | Type | Notes |
 |---|---|---|---|
-| `/controller/sensor_frame` | topic | `picar_interfaces/SensorFrame` | About every 30 ms (a target): forward range, servo angle, greyscale[3], last motor power, armed |
-| `/planner/motion_plan` | topic | `picar_interfaces/MotionPlan` | 5-10 Hz: 10 steps of 0.2 s, each four motor powers in `[-100, 100]`; nothing is published while disarmed |
+| `/controller/range` | topic | `sensor_msgs/Range` | About every 30 ms (a target); invalid readings are NaN (REP 117) |
+| `/controller/greyscale` | topic | `std_msgs/UInt16MultiArray` | The three greyscale ADC values |
+| `/joint_states` | topic | `sensor_msgs/JointState` | Servo angle (`position`) and applied motor power in percent (`effort`) |
+| `/controller/armed` | topic | `std_msgs/Bool` | Latched; whether the robot is armed |
+| `/planner/motion_plan` | topic | `trajectory_msgs/JointTrajectory` | 5-10 Hz: 10 points from 0.2 s to 2.0 s, each four motor powers in `[-100, 100]`; nothing is published while disarmed |
 | `/arm` | service | `std_srvs/SetBool` | `true` arms, `false` disarms; served by the controller |
 
-See [docs/architecture.md](docs/architecture.md) for the message fields and the safety limits.
+All messages are standard ROS ones. See [docs/architecture.md](docs/architecture.md) for the
+details and the safety limits.
 
 ### Parameters
 
@@ -65,7 +69,7 @@ See [docs/architecture.md](docs/architecture.md) for the message fields and the 
 | `plan_timeout_ms` | controller | No new plan for this long stops all motors (default 500) |
 | `rate_hz` | motion_planner | Plans per second (default 10) |
 | `stop_distance_cm` | motion_planner | Obstacle closer than this starts the stop/reverse/turn manoeuvre |
-| `cruise_speed`, `turn_duration_s`, ... | motion_planner | Speeds and manoeuvre timing |
+| `cruise_power`, `turn_duration_s`, ... | motion_planner | Motor powers and manoeuvre timing |
 
 The full list is in [docs/architecture.md](docs/architecture.md).
 
@@ -102,7 +106,7 @@ with the ROS Python, separate from the core tests above. They cover each node wi
 hardware and launch the whole stack with `picar.launch.py`.
 
 ```bash
-scripts/test_ros.sh                   # builds picar_interfaces and picar_ros, then runs the tests
+scripts/test_ros.sh                   # builds picar_ros, then runs the tests
 scripts/test_ros.sh -k motion_planner # extra arguments go to pytest
 ```
 

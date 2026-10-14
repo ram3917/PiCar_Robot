@@ -8,7 +8,7 @@ controller:
     hardware: fake
     # Scripted readings for the fake hardware, in cm. The last value repeats.
     fake_distances_cm: [100.0]
-    sensor_period_ms: 30.0   # one SensorFrame per period (a target; each frame is timestamped)
+    sensor_period_ms: 30.0   # one range, greyscale and joint-state message per period (a target)
     motor_tick_ms: 10.0      # how often the motors are updated from the plan
     hard_stop_cm: 10.0       # forward drive stops when the range is closer than this
     range_stale_ms: 150.0    # no valid range for this long also stops forward drive
@@ -19,10 +19,10 @@ motion_planner:
   ros__parameters:
     rate_hz: 10.0            # plans per second (5 to 10)
     stop_distance_cm: 20.0   # obstacle closer than this starts stop/reverse/turn
-    cruise_speed: 0.5        # forward speed while cruising, in (0, 1]
-    reverse_speed: 0.3
-    turn_rate: 0.5
+    cruise_power: 50.0       # forward motor power while cruising, in (0, 100]
+    reverse_power: 30.0
+    turn_power: 50.0
     stop_duration_s: 0.2
     reverse_duration_s: 0.4
     turn_duration_s: 1.0     # how long the turn lasts
-    frame_stale_ms: 500.0    # an older sensor frame makes the plan a stop
+    frame_stale_ms: 500.0    # an older range makes the plan a stop

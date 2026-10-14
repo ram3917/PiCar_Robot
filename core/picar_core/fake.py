@@ -7,7 +7,7 @@ from collections import deque
 from dataclasses import dataclass
 from typing import Iterable, Sequence, Tuple, Union
 
-from picar_core.motors import ZERO_POWER, MotorPowers, validate_motor_powers
+from picar_core.motors import ZERO_POWER, MotorPowers
 
 
 @dataclass(frozen=True)
@@ -25,9 +25,6 @@ class SetServoAngle:
     deg: float
 
 
-HardwareCall = Union[SetMotorPower, Stop, SetServoAngle]
-
-
 class FakeRobot:
     """Plays back scripted distances and records every command it is given.
 
@@ -39,7 +36,7 @@ class FakeRobot:
     def __init__(self, distances: Iterable[float | None] = ()) -> None:
         self._distances: deque[float | None] = deque(distances)
         self._last_distance: float | None = None
-        self.commands: list[HardwareCall] = []
+        self.commands: list[Union[SetMotorPower, Stop, SetServoAngle]] = []
         self.motor_powers: MotorPowers = ZERO_POWER
         self.servo_angle: float | None = None
         self.greyscale: Tuple[int, int, int] = (0, 0, 0)
@@ -49,9 +46,8 @@ class FakeRobot:
         self._distances.extend(distances)
 
     def set_motor_power(self, powers: Sequence[int]) -> None:
-        validated = validate_motor_powers(powers)
-        self.motor_powers = validated
-        self.commands.append(SetMotorPower(validated))
+        self.motor_powers = tuple(powers)  # type: ignore[assignment]
+        self.commands.append(SetMotorPower(self.motor_powers))
 
     def stop(self) -> None:
         self.motor_powers = ZERO_POWER

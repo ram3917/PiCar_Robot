@@ -10,10 +10,6 @@ package "picar_ros (ROS 2 nodes)" {
   component "motion_planner" as planner
 }
 
-package "picar_interfaces" {
-  component "SensorFrame\nMotionPlan\nMotorPower" as msgs
-}
-
 package "picar_core (pure Python, no ROS)" {
   component "MotorGovernor\n(plan playback + safety)" as governor
   component "ReactivePlanner" as reactive
@@ -29,15 +25,13 @@ node "PiCar-4WD HAT" as hat {
   component "Motors x4" as motors
 }
 
-controller --> planner : /controller/sensor_frame\nSensorFrame, ~30 ms
-planner --> controller : /planner/motion_plan\nMotionPlan, 5-10 Hz
+controller --> planner : /controller/range, /controller/armed\n(also greyscale and joint states), ~30 ms
+planner --> controller : /planner/motion_plan\nJointTrajectory, 5-10 Hz
 Operator --> controller : /arm\nstd_srvs/SetBool
 
 controller ..> governor : uses
 planner ..> reactive : uses
 controller ..> hw : set_motor_power() / stop()\nread_distance_cm() / read_greyscale()
-controller ..> msgs
-planner ..> msgs
 
 fake ..|> hw
 adapter ..|> hw

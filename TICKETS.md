@@ -33,10 +33,10 @@ two processes cannot both import `picar_4wd`. See [docs/architecture.md](docs/ar
 
 | ID | Title | Mode | Status |
 |---|---|---|---|
-| V02-01 | picar_core: per-motor power, `MotionPlan`, `SensorFrame` | 🤖 AFK | Done, tested |
+| V02-01 | picar_core: per-motor power, `MotionPlan`, `SensorFrame` (planner input) | 🤖 AFK | Done, tested |
 | V02-02 | picar_core: `ReactivePlanner` (2 s plan of 10 steps) | 🤖 AFK | Done, tested |
 | V02-03 | picar_core: `MotorGovernor` (plan playback, disarm, heartbeat, hard stop, blind stop) | 🤖 AFK | Done, tested |
-| V02-04 | picar_interfaces: `SensorFrame`, `MotionPlan`, `MotorPower` messages | 🤖 AFK | Written, not built |
+| V02-04 | Standard ROS messages between the nodes (`Range`, `JointState`, `JointTrajectory`, ...) instead of a custom package | 🤖 AFK | Written, not run on ROS |
 | V02-05 | picar_ros: controller node (sole hardware owner, `/arm`, safety) | 🤖 AFK | Written, not run on ROS |
 | V02-06 | picar_ros: motion_planner node | 🤖 AFK | Written, not run on ROS |
 | V02-07 | Docker and launch: rpi-lgpio, `/dev/gpiochip0`, rosbag2 recording, `data/` volume | 🤖 AFK | Written, not built |
@@ -329,7 +329,7 @@ Checklist on the real robot:
 **Mode:** 🧑 Human needed  
 **Milestone:** Post-MVP
 
-The three greyscale values already arrive in every `SensorFrame` (v0.2) and the planner can read them. Add an edge flag to the frame and make the controller refuse forward drive at an edge, as it does for the ultrasonic hard stop, so it holds for any planner.
+The three greyscale values are already published on `/controller/greyscale` (v0.2) and a planner can read them. Add an edge signal and make the controller refuse forward drive at an edge, as it does for the ultrasonic hard stop, so it holds for any planner.
 
 **Human needed:** calibrate thresholds on your floor surfaces and at a real table edge.
 
@@ -363,7 +363,7 @@ Read the kit's speed sensors, publish `nav_msgs/Odometry` on `/odom` + TF `odom 
 **Mode:** 🤖 AFK  
 **Milestone:** Post-MVP
 
-Accept `geometry_msgs/PoseStamped` on `/goal_pose` in the `odom` frame; the motion planner exposes goal distance/bearing in its observation (this will need new fields in `SensorFrame` or a second input message).
+Accept `geometry_msgs/PoseStamped` on `/goal_pose` in the `odom` frame; the motion planner exposes goal distance/bearing in its observation (this will need a new input topic).
 
 **Blocked by:** POST-03 (Wheel-speed odometry (/odom))
 
@@ -393,7 +393,7 @@ Partly settled in v0.2: the controller's `MotorGovernor` always applies its limi
 **Mode:** 🧑 Human needed  
 **Milestone:** Post-MVP
 
-Implement per POST-05/POST-06 decisions as a node that subscribes to `/controller/sensor_frame` and publishes `/planner/motion_plan` (10 steps of 4 motor powers), replacing `motion_planner` in the launch file. The message contract stays fixed. It may run on the Pi or off-board. Human needed for real-robot evaluation.
+Implement per POST-05/POST-06 decisions as a node that subscribes to the controller's topics and publishes `/planner/motion_plan` (a `JointTrajectory` of 4 motor powers), replacing `motion_planner` in the launch file. The message contract stays fixed. It may run on the Pi or off-board. Human needed for real-robot evaluation.
 
 **Blocked by:** POST-05 (Decide ML approach for ultrasonic goal-seeking), POST-06 (Decide safety arbitration: ML policy vs safety supervisor)
 
@@ -403,7 +403,7 @@ Implement per POST-05/POST-06 decisions as a node that subscribes to `/controlle
 **Mode:** 🤖 AFK  
 **Milestone:** Post-MVP
 
-Done in v0.2 (V02-07, not yet run on the robot): launch arg `record:=true` (container env `PICAR_RECORD=true`) records `/controller/sensor_frame` and `/planner/motion_plan` into the `data/` volume. Remaining: add `/odom` once POST-03 exists, and check the recordings are usable for training.
+Done in v0.2 (V02-07, not yet run on the robot): launch arg `record:=true` (container env `PICAR_RECORD=true`) records the controller's range, greyscale, joint-state and armed topics and `/planner/motion_plan` into the `data/` volume. Remaining: add `/odom` once POST-03 exists, and check the recordings are usable for training.
 
 **Blocked by:** MVP-17 (MVP acceptance test + release v0.1.0)
 
@@ -413,7 +413,7 @@ Done in v0.2 (V02-07, not yet run on the robot): launch arg `record:=true` (cont
 **Mode:** 🧑 Human needed  
 **Milestone:** Post-MVP
 
-Decide transport (ROS-TCP-Connector vs rosbridge vs native DDS), then Unity scene showing robot state + range, sending plans (v0.2 has no `/cmd_vel`; manual driving would publish `MotionPlan` messages) and arm/disarm on `/arm`. Add operator heartbeat dead-man switch (the controller's plan heartbeat already stops the motors).
+Decide transport (ROS-TCP-Connector vs rosbridge vs native DDS), then Unity scene showing robot state + range, sending plans (v0.2 has no `/cmd_vel`; manual driving would publish plans) and arm/disarm on `/arm`. Add operator heartbeat dead-man switch (the controller's plan heartbeat already stops the motors).
 
 **Blocked by:** MVP-17 (MVP acceptance test + release v0.1.0)
 
@@ -423,7 +423,7 @@ Decide transport (ROS-TCP-Connector vs rosbridge vs native DDS), then Unity scen
 **Mode:** 🧑 Human needed  
 **Milestone:** Post-MVP
 
-Simulated PiCar + ultrasonic in Unity publishing `/controller/sensor_frame` and consuming `/planner/motion_plan`, so the motion planner runs unchanged in sim and on the real robot.
+Simulated PiCar + ultrasonic in Unity publishing the controller's range, greyscale and joint-state topics and consuming `/planner/motion_plan`, so the motion planner runs unchanged in sim and on the real robot.
 
 **Blocked by:** POST-09 (Unity integration: teleop + digital twin)
 

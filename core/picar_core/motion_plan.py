@@ -2,39 +2,39 @@
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from typing import Tuple
 
-from picar_core.motors import MotorPowers, validate_motor_powers
-
-PLAN_STEPS = 10
-STEP_S = 0.2  # 10 steps x 200 ms = a 2 s plan
+import numpy as np
 
 
 @dataclass(frozen=True)
 class MotionPlan:
-    """A timed sequence of motor powers.
+    """Motor powers to reach at given times, like a ``trajectory_msgs/JointTrajectory``.
 
-    Each step is a keyframe at the start of its ``step_s`` slot. The controller ramps linearly
-    from one step to the next and holds the last step until the plan runs out.
+    The controller ramps linearly between points, holds the first one before its time, and stops
+    once the last time has passed. Times count from the moment the plan arrives.
 
     Args:
-        steps: motor powers per step, each a 4-tuple (see ``MotorPowers``)
-        step_s: duration of one step in seconds
+        times_s: seconds after arrival at which each point's powers are reached, increasing
+        steps: the four motor powers (see ``MotorPowers``) at each point; need not be ints
     """
 
-    steps: Tuple[MotorPowers, ...]
-    step_s: float = STEP_S
+    times_s: Tuple[float, ...]
+    steps: Tuple[Tuple[float, float, float, float], ...]
 
     def __post_init__(self) -> None:
-        if not self.steps:
-            raise ValueError("a plan needs at least one step")
-        if not math.isfinite(self.step_s) or self.step_s <= 0:
-            raise ValueError(f"step_s {self.step_s!r} must be positive")
-        # Normalises lists to tuples and rejects bad values.
-        object.__setattr__(self, "steps", tuple(validate_motor_powers(s) for s in self.steps))
+        times = np.asarray(self.times_s, dtype=float)
+        steps = np.asarray(self.steps, dtype=float)
+        if times.ndim != 1 or times.size == 0 or steps.shape != (times.size, 4):
+            raise ValueError(f"need one 4-power step per time, got {times.shape} and {steps.shape}")
+        if not (np.isfinite(times).all() and np.isfinite(steps).all()):
+            raise ValueError("times and powers must be finite")
+        if times[0] < 0 or (np.diff(times) <= 0).any():
+            raise ValueError("times must be non-negative and strictly increasing")
+        object.__setattr__(self, "times_s", tuple(times.tolist()))
+        object.__setattr__(self, "steps", tuple(map(tuple, steps.tolist())))
 
     @property
     def horizon_s(self) -> float:
-        return len(self.steps) * self.step_s
+        return self.times_s[-1]

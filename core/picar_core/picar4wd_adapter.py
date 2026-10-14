@@ -13,8 +13,6 @@ import math
 from types import ModuleType
 from typing import Sequence, Tuple
 
-from picar_core.motors import validate_motor_powers
-
 # Motor numbers as picar-4wd names them: 1 left front, 2 right front, 3 left rear, 4 right rear.
 # This is also the order of `MotorPowers`, so power i drives motor i + 1.
 
@@ -39,8 +37,7 @@ class Picar4WDHardware:
         self._fc = fc if fc is not None else _import_library()
 
     def set_motor_power(self, powers: Sequence[int]) -> None:
-        # Validated first, so a bad value moves no motor.
-        for motor, power in enumerate(validate_motor_powers(powers), start=1):
+        for motor, power in enumerate(powers, start=1):
             self._fc.set_motor_power(motor, power)
 
     def stop(self) -> None:

@@ -8,6 +8,8 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
+import numpy as np
+
 from picar_core.motion_plan import MotionPlan
 from picar_core.motors import MAX_POWER, ZERO_POWER, MotorPowers
 
@@ -27,6 +29,7 @@ class GovernorConfig:
     plan_timeout_ms: float = 500.0
 
     def __post_init__(self) -> None:
+        # A zero or negative limit would silently switch a safety rule off.
         for name in ("hard_stop_cm", "range_stale_ms", "plan_timeout_ms"):
             value = getattr(self, name)
             if not math.isfinite(value) or value <= 0:
@@ -41,9 +44,10 @@ class MotorGovernor:
 
     Output is all zeros when disarmed, when there is no plan, when no new plan has arrived for
     ``plan_timeout_ms``, or when the plan's horizon has ended. Otherwise it ramps linearly between
-    plan steps. On top of that, forward drive is blocked while the forward range is closer than
-    ``hard_stop_cm`` or has been invalid for ``range_stale_ms``: every positive power is dropped to
-    zero and negative power is kept, so the robot can still reverse and spin in place.
+    plan points and clamps to the motor limits. On top of that, forward drive is blocked while
+    the forward range is closer than ``hard_stop_cm`` or has been invalid for ``range_stale_ms``:
+    every positive power is dropped to zero and negative power is kept, so the robot can still
+    reverse and spin in place.
     """
 
     def __init__(self, config: GovernorConfig | None = None) -> None:
@@ -94,12 +98,14 @@ class MotorGovernor:
         plan = self._plan
         if plan is None:
             return ZERO_POWER, "no_plan"
-        elapsed_s = now_s - self._plan_received_s
+        elapsed_s = max(now_s - self._plan_received_s, 0.0)
         if elapsed_s * 1000.0 > self.config.plan_timeout_ms:
             return ZERO_POWER, "plan_timeout"
         if elapsed_s >= plan.horizon_s:
             return ZERO_POWER, "plan_done"
-        return _ramp(plan, max(elapsed_s, 0.0)), "ok"
+        ramped = [np.interp(elapsed_s, plan.times_s, column) for column in zip(*plan.steps)]
+        clamped = np.clip(np.rint(ramped), -MAX_POWER, MAX_POWER).astype(int)
+        return tuple(clamped.tolist()), "ok"  # type: ignore[return-value]
 
     def _forward_blocked(self, now_s: float) -> bool:
         if self._last_valid_range_s is None:
@@ -107,14 +113,3 @@ class MotorGovernor:
         if (now_s - self._last_valid_range_s) * 1000.0 > self.config.range_stale_ms:
             return True
         return self._last_distance_cm < self.config.hard_stop_cm
-
-
-def _ramp(plan: MotionPlan, elapsed_s: float) -> MotorPowers:
-    """Linear interpolation between the plan's keyframes; the last step is held."""
-    index = int(elapsed_s / plan.step_s)
-    if index >= len(plan.steps) - 1:
-        return plan.steps[-1]
-    fraction = (elapsed_s - index * plan.step_s) / plan.step_s
-    start, end = plan.steps[index], plan.steps[index + 1]
-    mixed = tuple(round(a + (b - a) * fraction) for a, b in zip(start, end))
-    return tuple(max(-MAX_POWER, min(MAX_POWER, p)) for p in mixed)  # type: ignore[return-value]

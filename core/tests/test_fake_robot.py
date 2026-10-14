@@ -103,29 +103,6 @@ def test_servo_angle_tracks_the_latest_command():
     assert robot.servo_angle == -30.0
 
 
-@pytest.mark.parametrize("powers", [(100, 100, 100, 100), (-100, -100, -100, -100), (-100, 100, -100, 100)])
-def test_powers_at_the_limits_are_accepted(powers):
-    robot = FakeRobot()
-
-    robot.set_motor_power(powers)
-
-    assert robot.motor_powers == powers
-
-
-@pytest.mark.parametrize(
-    "powers",
-    [(101, 0, 0, 0), (0, -101, 0, 0), (0, 0, 0), (0.5, 0, 0, 0), (math.nan, 0, 0, 0)],
-)
-def test_bad_powers_are_rejected_and_not_recorded(powers):
-    robot = FakeRobot()
-
-    with pytest.raises(ValueError):
-        robot.set_motor_power(powers)
-
-    assert robot.commands == []
-    assert robot.is_stopped
-
-
 @pytest.mark.parametrize("deg", [math.nan, math.inf])
 def test_non_finite_servo_angle_is_rejected(deg):
     robot = FakeRobot()

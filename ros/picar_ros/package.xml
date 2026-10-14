@@ -10,14 +10,15 @@
   <!-- picar_core is pip-installed into the image, so it is not a rosdep key. -->
   <buildtool_depend>ament_python</buildtool_depend>
 
-  <depend>picar_interfaces</depend>
-
   <exec_depend>ament_index_python</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>rclpy</exec_depend>
+  <exec_depend>rosbag2</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>std_msgs</exec_depend>
   <exec_depend>std_srvs</exec_depend>
+  <exec_depend>trajectory_msgs</exec_depend>
 
   <test_depend>python3-pytest</test_depend>
   <test_depend>launch_testing</test_depend>

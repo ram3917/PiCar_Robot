@@ -1,8 +1,20 @@
+import math
+
 import pytest
-from picar_interfaces.msg import MotionPlan, SensorFrame
+from sensor_msgs.msg import JointState, Range
+from std_msgs.msg import Bool, UInt16MultiArray
+from trajectory_msgs.msg import JointTrajectory
 
 from picar_core import SetServoAngle, Stop
 from picar_ros.controller_node import ControllerNode
+from picar_ros.interface import (
+    ARMED_QOS,
+    ARMED_TOPIC,
+    GREYSCALE_TOPIC,
+    JOINT_STATES_TOPIC,
+    PLAN_TOPIC,
+    RANGE_TOPIC,
+)
 
 from conftest import call_arm, plan_msg
 
@@ -11,18 +23,31 @@ FORWARD = (50, 50, 50, 50)
 REVERSE = (-30, -30, -30, -30)
 
 
-@pytest.fixture
-def controller(ros):
+def _start(ros, distance_cm: float):
     node = ros.start(
         ControllerNode,
         hardware="fake",
-        fake_distances_cm=[100.0],
+        fake_distances_cm=[distance_cm],
         plan_timeout_ms=PLAN_TIMEOUT_MS,
     )
-    ros.frames = ros.record(SensorFrame, "/controller/sensor_frame")
-    ros.plans = ros.publisher(MotionPlan, "/planner/motion_plan")
+    ros.ranges = ros.record(Range, RANGE_TOPIC)
+    ros.greyscale = ros.record(UInt16MultiArray, GREYSCALE_TOPIC)
+    ros.joints = ros.record(JointState, JOINT_STATES_TOPIC)
+    ros.armed = ros.record(Bool, ARMED_TOPIC, ARMED_QOS)
+    ros.plans = ros.publisher(JointTrajectory, PLAN_TOPIC)
     ros.motors = lambda: node._hardware.motor_powers
     return ros
+
+
+@pytest.fixture
+def controller(ros):
+    return _start(ros, distance_cm=100.0)
+
+
+@pytest.fixture
+def blocked(ros):
+    """A controller whose forward range is inside the 10 cm hard stop."""
+    return _start(ros, distance_cm=5.0)
 
 
 def _send_plans(controller, powers, seconds: float = 0.5) -> None:
@@ -42,38 +67,49 @@ def test_motors_are_stopped_and_the_servo_is_forward_at_startup(controller):
     assert controller.motors() == (0, 0, 0, 0)
 
 
-def test_sensor_frames_are_published_about_every_30_ms(controller):
+def test_sensors_are_published_about_every_30_ms(controller):
     controller.spin_for(1.0)
 
-    assert 15 <= len(controller.frames) <= 40  # a target, not a guarantee
+    assert 15 <= len(controller.ranges) <= 40  # a target, not a guarantee
+    assert len(controller.greyscale) == len(controller.joints) == len(controller.ranges)
 
 
-def test_a_frame_describes_the_sensors_and_a_disarmed_stopped_robot(controller):
+def test_the_range_is_the_ultrasonic_reading_in_metres(controller):
     controller.spin_for(0.3)
 
-    frame = controller.frames[-1]
-    assert frame.range_m == pytest.approx(1.0)
-    assert frame.range_valid
-    assert frame.servo_angle_deg == 0.0
-    assert list(frame.greyscale) == [0, 0, 0]
-    assert list(frame.last_motor_power) == [0, 0, 0, 0]
-    assert not frame.armed
+    assert controller.ranges[-1].range == pytest.approx(1.0)
+    assert controller.ranges[-1].radiation_type == Range.ULTRASOUND
 
 
-def test_the_robot_boots_disarmed_and_ignores_plans(controller):
-    _send_plans(controller, FORWARD)
+def test_greyscale_and_joint_states_describe_a_stopped_robot(controller):
+    controller.spin_for(0.3)
 
-    assert controller.motors() == (0, 0, 0, 0)
+    assert list(controller.greyscale[-1].data) == [0, 0, 0]
+    joints = controller.joints[-1]
+    assert joints.position[0] == 0.0  # the servo points forward
+    assert list(joints.effort[1:]) == [0.0, 0.0, 0.0, 0.0]  # no motor power applied
 
 
-def test_arm_and_disarm_are_reported_in_the_frames(controller):
+def test_the_robot_boots_disarmed_and_the_state_is_latched(controller):
+    controller.spin_for(0.2)
+
+    assert controller.armed[-1].data is False
+
+
+def test_arm_and_disarm_are_reported_on_the_armed_topic(controller):
     assert call_arm(controller, True).success
     controller.spin_for(0.2)
-    assert controller.frames[-1].armed
+    assert controller.armed[-1].data is True
 
     assert call_arm(controller, False).success
     controller.spin_for(0.2)
-    assert not controller.frames[-1].armed
+    assert controller.armed[-1].data is False
+
+
+def test_the_robot_ignores_plans_while_disarmed(controller):
+    _send_plans(controller, FORWARD)
+
+    assert controller.motors() == (0, 0, 0, 0)
 
 
 def test_an_armed_robot_drives_the_plan(controller):
@@ -82,7 +118,7 @@ def test_an_armed_robot_drives_the_plan(controller):
     _send_plans(controller, FORWARD)
 
     assert controller.motors() == FORWARD
-    assert list(controller.frames[-1].last_motor_power) == list(FORWARD)
+    assert list(controller.joints[-1].effort[1:]) == pytest.approx(list(FORWARD))
 
 
 def test_motors_stop_when_the_planner_goes_quiet(controller):
@@ -114,9 +150,17 @@ def test_a_plan_sent_after_disarming_is_ignored(controller):
     assert controller.motors() == (0, 0, 0, 0)
 
 
-def test_a_bad_plan_is_ignored(controller):
+@pytest.mark.parametrize(
+    "bad",
+    [
+        plan_msg(*[(math.nan, 0, 0, 0)] * 10),  # not a number
+        plan_msg(*[(0, 0, 0)] * 10),  # three powers instead of four
+    ],
+    ids=["nan", "wrong-width"],
+)
+def test_a_malformed_plan_is_ignored(controller, bad):
     call_arm(controller, True)
-    bad = plan_msg(*[(120, 0, 0, 0)] * 10)  # fits in int8 but is outside [-100, 100]
+
     for _ in range(5):
         controller.plans.publish(bad)
         controller.spin_for(0.1)
@@ -124,15 +168,24 @@ def test_a_bad_plan_is_ignored(controller):
     assert controller.motors() == (0, 0, 0, 0)
 
 
-@pytest.fixture
-def blocked(ros):
-    """A controller whose forward range is inside the 10 cm hard stop."""
-    node = ros.start(
-        ControllerNode, hardware="fake", fake_distances_cm=[5.0], plan_timeout_ms=PLAN_TIMEOUT_MS
-    )
-    ros.plans = ros.publisher(MotionPlan, "/planner/motion_plan")
-    ros.motors = lambda: node._hardware.motor_powers
-    return ros
+def test_a_plan_for_the_wrong_joints_is_ignored(controller):
+    call_arm(controller, True)
+    wrong = plan_msg(*[FORWARD] * 10)
+    wrong.joint_names = ["a", "b", "c", "d"]
+
+    for _ in range(5):
+        controller.plans.publish(wrong)
+        controller.spin_for(0.1)
+
+    assert controller.motors() == (0, 0, 0, 0)
+
+
+def test_powers_beyond_the_motor_limits_are_clamped(controller):
+    call_arm(controller, True)
+
+    _send_plans(controller, (250, 250, 250, 250))
+
+    assert controller.motors() == (100, 100, 100, 100)
 
 
 def test_forward_drive_is_refused_inside_the_hard_stop_distance(blocked):

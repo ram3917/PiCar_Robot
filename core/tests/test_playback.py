@@ -13,7 +13,8 @@ def governor(**overrides):
 
 
 def plan(*steps, step_s=0.2):
-    return MotionPlan(steps=steps, step_s=step_s)
+    """Points reached at 0.2 s, 0.4 s, ... after the plan arrives."""
+    return MotionPlan(times_s=tuple((i + 1) * step_s for i in range(len(steps))), steps=steps)
 
 
 def test_a_new_governor_outputs_zero_and_is_disarmed():
@@ -30,42 +31,51 @@ def test_armed_without_a_plan_outputs_zero():
     assert g.reason == "no_plan"
 
 
-def test_the_first_step_plays_at_the_moment_the_plan_arrives():
+def test_the_first_point_is_held_until_its_time():
     g = governor()
     g.set_plan(plan((40, 40, 40, 40), (80, 80, 80, 80)), now_s=0.0)
 
     assert g.output(0.0) == (40, 40, 40, 40)
+    assert g.output(0.1) == (40, 40, 40, 40)
     assert g.reason == "ok"
 
 
-def test_power_ramps_linearly_between_steps():
+def test_power_ramps_linearly_between_points():
     g = governor()
     g.set_plan(plan((0, 0, 0, 0), (100, 100, 100, 100)), now_s=0.0)
 
-    assert g.output(0.05) == (25, 25, 25, 25)
-    assert g.output(0.10) == (50, 50, 50, 50)
+    assert g.output(0.25) == (25, 25, 25, 25)
+    assert g.output(0.30) == (50, 50, 50, 50)
 
 
 def test_ramp_goes_through_zero_when_the_direction_changes():
     g = governor()
     g.set_plan(plan((-40, 40, -40, 40), (40, -40, 40, -40)), now_s=0.0)
 
-    assert g.output(0.10) == (0, 0, 0, 0)
+    assert g.output(0.30) == (0, 0, 0, 0)
 
 
-def test_the_last_step_is_held_until_the_plan_horizon_ends():
-    g = governor(plan_timeout_ms=5000.0)
-    g.set_plan(plan((10, 10, 10, 10), (60, 60, 60, 60)), now_s=0.0)
-
-    assert g.output(0.3) == (60, 60, 60, 60)
-
-
-def test_output_is_zero_after_the_plan_horizon():
+def test_output_is_zero_once_the_plan_horizon_is_reached():
     g = governor(plan_timeout_ms=5000.0)
     g.set_plan(plan((60, 60, 60, 60), (60, 60, 60, 60)), now_s=0.0)
 
-    assert g.output(0.4) == ZERO_POWER
+    assert g.output(0.39) == (60, 60, 60, 60)
+    assert g.output(0.40) == ZERO_POWER
     assert g.reason == "plan_done"
+
+
+def test_powers_beyond_the_motor_limits_are_clamped():
+    g = governor()
+    g.set_plan(plan((250, -250, 100, -100)), now_s=0.0)
+
+    assert g.output(0.0) == (100, -100, 100, -100)
+
+
+def test_fractional_powers_are_rounded_to_ints():
+    g = governor()
+    g.set_plan(plan((40.4, 40.6, -40.4, -40.6)), now_s=0.0)
+
+    assert g.output(0.0) == (40, 41, -40, -41)
 
 
 def test_no_new_plan_within_the_timeout_stops_the_motors():
@@ -199,6 +209,6 @@ def test_an_open_path_with_infinite_range_does_not_block():
     "overrides",
     [{"hard_stop_cm": 0.0}, {"range_stale_ms": -1.0}, {"plan_timeout_ms": 0.0}],
 )
-def test_bad_config_is_rejected(overrides):
+def test_a_limit_that_would_disable_a_safety_rule_is_rejected(overrides):
     with pytest.raises(ValueError):
         GovernorConfig(**overrides)

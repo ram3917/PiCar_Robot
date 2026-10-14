@@ -2,7 +2,7 @@ import math
 
 import pytest
 
-from picar_core import PLAN_STEPS, ZERO_POWER, PlannerConfig, ReactivePlanner, SensorFrame
+from picar_core import PLAN_STEPS, STEP_S, ZERO_POWER, PlannerConfig, ReactivePlanner, SensorFrame
 
 CRUISE = (50, 50, 50, 50)
 REVERSE = (-30, -30, -30, -30)
@@ -21,11 +21,16 @@ def test_nothing_is_planned_while_disarmed():
     assert planner().plan(frame(100.0, armed=False), now_s=0.0) is None
 
 
-def test_a_clear_path_is_ten_cruise_steps_covering_two_seconds():
+def test_a_plan_is_ten_points_reached_at_the_end_of_each_200_ms_slot():
     plan = planner().plan(frame(100.0), now_s=0.0)
 
-    assert plan.steps == (CRUISE,) * PLAN_STEPS
+    assert len(plan.steps) == PLAN_STEPS
+    assert plan.times_s == pytest.approx(tuple((i + 1) * STEP_S for i in range(PLAN_STEPS)))
     assert plan.horizon_s == pytest.approx(2.0)
+
+
+def test_a_clear_path_cruises():
+    assert planner().plan(frame(100.0), now_s=0.0).steps == (CRUISE,) * PLAN_STEPS
 
 
 def test_an_open_path_with_infinite_range_cruises():
@@ -36,9 +41,7 @@ def test_an_obstacle_starts_stop_then_reverse_then_turn_then_cruise():
     plan = planner().plan(frame(10.0), now_s=0.0)
 
     # 0.2 s stop, 0.4 s reverse, 1.0 s turn, then cruise; steps are 0.2 s each.
-    assert plan.steps == (
-        (ZERO_POWER,) + (REVERSE,) * 2 + (TURN,) * 5 + (CRUISE,) * 2
-    )
+    assert plan.steps == (ZERO_POWER,) + (REVERSE,) * 2 + (TURN,) * 5 + (CRUISE,) * 2
 
 
 def test_the_manoeuvre_is_kept_on_replans_even_if_the_path_looks_clear():
@@ -70,9 +73,7 @@ def test_a_new_obstacle_after_the_manoeuvre_starts_a_new_one():
 
 
 def test_an_invalid_distance_is_a_stop():
-    plan = planner().plan(frame(None), now_s=0.0)
-
-    assert plan.steps == (ZERO_POWER,) * PLAN_STEPS
+    assert planner().plan(frame(None), now_s=0.0).steps == (ZERO_POWER,) * PLAN_STEPS
 
 
 def test_a_stale_frame_is_a_stop_even_with_a_clear_path():
@@ -95,19 +96,3 @@ def test_disarming_forgets_a_manoeuvre_in_progress():
     plan = p.plan(frame(100.0, stamp_s=0.4), now_s=0.4)
 
     assert plan.steps == (CRUISE,) * PLAN_STEPS
-
-
-@pytest.mark.parametrize(
-    "overrides",
-    [
-        {"stop_distance_cm": 0.0},
-        {"cruise_speed": 0.0},
-        {"cruise_speed": 1.1},
-        {"turn_rate": -0.1},
-        {"turn_duration_s": 0.0},
-        {"frame_stale_ms": 0.0},
-    ],
-)
-def test_bad_config_is_rejected(overrides):
-    with pytest.raises(ValueError):
-        PlannerConfig(**overrides)

@@ -9,7 +9,7 @@ description = "Pure-Python core for the PiCar-4WD robot: hardware interface, mot
 requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Rama Mallavarapu" }]
-dependencies = []
+dependencies = ["numpy>=1.26"]
 
 # Test tools live in the workspace root's dev group (see ../pyproject.toml).
 

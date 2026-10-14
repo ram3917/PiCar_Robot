@@ -1,5 +1,4 @@
-# The PiCar image: ROS 2 Jazzy, picar_core, picar_interfaces, picar_ros and SunFounder's
-# picar-4wd library.
+# The PiCar image: ROS 2 Jazzy, picar_core, picar_ros and SunFounder's picar-4wd library.
 # Built for linux/arm64 in CI; a linux/amd64 build works for smoke tests on a dev box.
 FROM ros:jazzy-ros-base
 
@@ -18,6 +17,7 @@ RUN apt-get update \
         python3-dev \
         python3-smbus \
         ros-jazzy-rosbag2 \
+        ros-jazzy-trajectory-msgs \
     && rm -rf /var/lib/apt/lists/*
 
 # Dependencies picar-4wd imports (RPi.GPIO for pins, smbus2 for I2C), then the library itself,
@@ -43,10 +43,9 @@ WORKDIR /ws
 COPY core /ws/core
 RUN uv pip install --system --break-system-packages /ws/core
 
-COPY ros/picar_interfaces /ws/src/picar_interfaces
 COPY ros/picar_ros /ws/src/picar_ros
 RUN . /opt/ros/jazzy/setup.sh \
-    && colcon build --packages-select picar_interfaces picar_ros \
+    && colcon build --packages-select picar_ros \
     && rm -rf /ws/build /ws/log /ws/src
 
 COPY docker/entrypoint.sh /ws/entrypoint.sh

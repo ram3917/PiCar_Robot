@@ -16,8 +16,18 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from picar_interfaces.msg import MotionPlan, SensorFrame
+from sensor_msgs.msg import JointState, Range
+from std_msgs.msg import Bool
 from std_srvs.srv import SetBool
+from trajectory_msgs.msg import JointTrajectory
+
+from picar_ros.interface import (
+    ARMED_QOS,
+    ARMED_TOPIC,
+    JOINT_STATES_TOPIC,
+    PLAN_TOPIC,
+    RANGE_TOPIC,
+)
 
 
 @pytest.mark.launch_test
@@ -41,9 +51,11 @@ class TestRunningStack(unittest.TestCase):
     def setUpClass(cls):
         rclpy.init()
         cls.node = rclpy.create_node("launch_probe")
-        cls.frames, cls.plans = [], []
-        cls.node.create_subscription(SensorFrame, "/controller/sensor_frame", cls.frames.append, 10)
-        cls.node.create_subscription(MotionPlan, "/planner/motion_plan", cls.plans.append, 10)
+        cls.ranges, cls.joints, cls.armed, cls.plans = [], [], [], []
+        cls.node.create_subscription(Range, RANGE_TOPIC, cls.ranges.append, 10)
+        cls.node.create_subscription(JointState, JOINT_STATES_TOPIC, cls.joints.append, 10)
+        cls.node.create_subscription(Bool, ARMED_TOPIC, cls.armed.append, ARMED_QOS)
+        cls.node.create_subscription(JointTrajectory, PLAN_TOPIC, cls.plans.append, 10)
 
     @classmethod
     def tearDownClass(cls):
@@ -65,12 +77,12 @@ class TestRunningStack(unittest.TestCase):
         )
 
     def test_2_controller_publishes_the_fake_range(self):
-        self.assertTrue(self._spin_until(lambda: self.frames))
-        self.assertAlmostEqual(self.frames[-1].range_m, 1.0, places=3)  # params.yaml: 100 cm
+        self.assertTrue(self._spin_until(lambda: self.ranges))
+        self.assertAlmostEqual(self.ranges[-1].range, 1.0, places=3)  # params.yaml: 100 cm
 
     def test_3_the_robot_boots_disarmed_and_nothing_is_planned(self):
-        self.assertTrue(self._spin_until(lambda: self.frames))
-        self.assertFalse(self.frames[-1].armed)
+        self.assertTrue(self._spin_until(lambda: self.armed))
+        self.assertFalse(self.armed[-1].data)
         self.assertEqual(self.plans, [])
 
     def test_4_arming_starts_cruising(self):
@@ -81,10 +93,9 @@ class TestRunningStack(unittest.TestCase):
         self.assertTrue(future.result().success, future.result().message)
 
         self.assertTrue(self._spin_until(lambda: self.plans))
-        self.assertTrue(
-            self._spin_until(lambda: self.frames and self.frames[-1].last_motor_power[0] > 0)
-        )
-        self.assertTrue(self.frames[-1].armed)
+        # The applied power is the joint states' effort (servo first, then the four motors).
+        self.assertTrue(self._spin_until(lambda: self.joints and self.joints[-1].effort[1] > 0))
+        self.assertTrue(self.armed[-1].data)
 
 
 @launch_testing.post_shutdown_test()

@@ -40,3 +40,4 @@ Thumbs.db
 .claude/
 # rosbag2 recordings made on the robot
 data/
+picar.tar
