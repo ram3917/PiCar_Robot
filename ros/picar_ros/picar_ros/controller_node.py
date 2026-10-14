@@ -102,7 +102,11 @@ class ControllerNode(Node):
 
     def _on_plan(self, msg: MotionPlanMsg) -> None:
         try:
-            plan = MotionPlan(steps=[tuple(step.power) for step in msg.steps], step_s=msg.step_s)
+            # rclpy hands fixed-size int arrays over as numpy values; the core wants plain ints.
+            plan = MotionPlan(
+                steps=[tuple(int(power) for power in step.power) for step in msg.steps],
+                step_s=float(msg.step_s),
+            )
         except ValueError as error:
             self.get_logger().warning(f"ignored a bad motion plan: {error}")
             return
