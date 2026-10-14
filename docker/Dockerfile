@@ -31,6 +31,13 @@ RUN uv pip install --system --break-system-packages rpi-lgpio smbus2 \
     && rm -rf /tmp/picar-4wd
 ENV PYTHONPATH=/opt/picar-4wd
 
+# picar-4wd reads its motor-reverse flags and servo offset from ~/.picar-4wd/config, under the
+# first folder in /home, and prints an error for each setting when the file is missing. An empty
+# file keeps the defaults quietly. To flip a motor, add e.g. "left_front_reverse = True" to it.
+RUN user="$(ls /home | head -n 1)" \
+    && mkdir -p "/home/${user}/.picar-4wd" \
+    && touch "/home/${user}/.picar-4wd/config"
+
 WORKDIR /ws
 
 COPY core /ws/core
