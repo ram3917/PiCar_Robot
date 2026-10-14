@@ -1,0 +1,22 @@
+# Node parameters for picar.launch.py. The `hardware` launch argument overrides the
+# `hardware` value for perception and action.
+#
+# Tune the planning values on the robot (MVP-16) and note the final values in the PR.
+
+perception:
+  ros__parameters:
+    hardware: fake
+    # Scripted readings for the fake hardware, in cm. The last value repeats.
+    fake_distances_cm: [100.0]
+
+planning:
+  ros__parameters:
+    stop_distance_cm: 20.0   # obstacle closer than this starts stop/reverse/turn
+    cruise_speed: 0.5        # forward speed while cruising, in [0, 1]
+    turn_duration_s: 1.0     # how long the turn lasts
+    range_stale_ms: 500.0    # older range counts as a fault
+
+action:
+  ros__parameters:
+    hardware: fake
+    cmd_timeout_ms: 500.0    # no /cmd_vel for this long -> motors stop
