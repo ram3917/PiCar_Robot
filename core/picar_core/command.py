@@ -9,7 +9,8 @@ from dataclasses import dataclass
 class Command:
     """Linear and angular velocity in normalised units.
 
-    Both are in ``[-1.0, 1.0]`` where negative is backwards / counter-clockwise.
+    Both are in ``[-1.0, 1.0]``. Positive ``linear`` is forward; positive ``angular`` is
+    counter-clockwise (left), matching ROS ``geometry_msgs/Twist``.
     """
 
     linear: float

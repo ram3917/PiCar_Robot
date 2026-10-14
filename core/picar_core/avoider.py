@@ -70,6 +70,11 @@ class Avoider:
         self._range_timestamp_ms = 0.0
         self._state_start_ms = 0.0
 
+    @property
+    def state(self) -> State:
+        """The current state, as of the last ``step`` or ``arm``/``disarm`` call."""
+        return self._state
+
     def step(self, observation: Observation, now_ms: float) -> AvoiderSnapshot:
         """Run one cycle of the state machine.
 
