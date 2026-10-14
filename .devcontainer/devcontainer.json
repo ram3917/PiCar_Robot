@@ -9,9 +9,22 @@
   },
   // The image's ENTRYPOINT starts the robot launch file. Replace it with a shell so VS Code's
   // keep-alive command runs instead, and the dev container stays up without starting the robot.
-  "runArgs": ["--entrypoint=/bin/sh"],
+  "runArgs": ["--entrypoint=/bin/sh", "--shm-size=1g"],
+  // A desktop in the browser for rviz2, rqt and PlotJuggler (no X server needed on Windows).
+  // Open http://localhost:6080 (password: noPassword) once the container is running.
+  "features": {
+    "ghcr.io/devcontainers/features/desktop-lite:1": {
+      "password": "noPassword"
+    }
+  },
+  "forwardPorts": [6080],
+  "portsAttributes": {
+    "6080": { "label": "Desktop (rviz2, rqt, PlotJuggler)", "onAutoForward": "notify" }
+  },
   "containerEnv": {
-    "PYTHONUNBUFFERED": "1"
+    "PYTHONUNBUFFERED": "1",
+    // The desktop has no GPU, so OpenGL (rviz2) renders in software.
+    "LIBGL_ALWAYS_SOFTWARE": "1"
   },
   "postCreateCommand": "bash .devcontainer/post-create.sh",
   "customizations": {

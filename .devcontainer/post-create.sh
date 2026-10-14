@@ -13,6 +13,20 @@ cd "${repo}"
 uv sync --locked
 uv pip install --system --break-system-packages -e "${repo}/core"
 
+# Viewers for watching the stack run. They live here, not in docker/Dockerfile, to keep the
+# robot image small. rqt_graph shows the nodes and topics, rqt_plot and PlotJuggler plot values
+# over time, rviz2 draws the ultrasonic range, and rqt_console shows the node logs.
+apt-get update
+apt-get install -y --no-install-recommends \
+    ros-jazzy-plotjuggler-ros \
+    ros-jazzy-rqt-console \
+    ros-jazzy-rqt-graph \
+    ros-jazzy-rqt-plot \
+    ros-jazzy-rqt-service-caller \
+    ros-jazzy-rqt-topic \
+    ros-jazzy-rviz2
+rm -rf /var/lib/apt/lists/*
+
 # shellcheck disable=SC1091
 source /opt/ros/jazzy/setup.bash
 cd "${repo}/ros"

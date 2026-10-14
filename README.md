@@ -110,6 +110,36 @@ scripts/test_ros.sh                   # builds picar_ros, then runs the tests
 scripts/test_ros.sh -k motion_planner # extra arguments go to pytest
 ```
 
+### Watch the stack run (dev container)
+
+The dev container has rviz2, rqt and PlotJuggler, and a desktop in your browser at
+<http://localhost:6080> (password `noPassword`). Rebuild the container once to get them. Start the
+stack with fake hardware in one terminal, and open the viewers from a terminal in the desktop
+(or any dev container terminal; `DISPLAY` is set for you):
+
+```bash
+source ros/install/setup.bash
+ros2 launch picar_ros picar.launch.py hardware:=fake     # constant 100 cm: the planner cruises
+
+ros2 service call /arm std_srvs/srv/SetBool "{data: true}"
+rqt_graph                          # nodes and topics; Node Graph shows controller <-> motion_planner
+plotjuggler                        # plot /joint_states effort (motor power) and /controller/range
+rviz2 -d .devcontainer/picar.rviz  # the ultrasonic cone from /controller/range
+rqt_console                        # node logs
+ros2 topic echo /planner/motion_plan --once
+```
+
+To see the avoidance manoeuvre, run the nodes with an obstacle at 15 cm instead of the launch file:
+
+```bash
+ros2 run picar_ros controller_node --ros-args -p hardware:=fake -p "fake_distances_cm:=[15.0]" &
+ros2 run picar_ros motion_planner_node
+```
+
+Armed, motor power in PlotJuggler then cycles stop, reverse, turn, as the plan ramps in. The
+controller's 10 cm hard stop and 500 ms plan timeout are visible too: disarm, or stop the planner
+(`Ctrl+C` it), and the power falls to zero.
+
 ### Deploy to the Pi
 
 The image is built on the dev machine and copied to the Pi by hand. Nothing is pushed to a
