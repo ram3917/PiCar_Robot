@@ -18,6 +18,7 @@ setup(
         "console_scripts": [
             "perception_node = picar_ros.perception_node:main",
             "planning_node = picar_ros.planning_node:main",
+            "action_node = picar_ros.action_node:main",
         ],
     },
 )
