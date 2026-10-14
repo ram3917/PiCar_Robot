@@ -59,6 +59,8 @@ class ControllerNode(Node):
         super().__init__("controller")
         self.declare_parameter("hardware", "fake")
         self.declare_parameter("fake_ranges_m", [1.0])
+        self.declare_parameter("sim_walls_m", [1.0, 0.6, 1.5])
+        self.declare_parameter("sim_speed_mps", 0.3)
         self.declare_parameter("sensor_period_ms", 30.0)
         self.declare_parameter("motor_tick_ms", 10.0)
         self.declare_parameter("slow_write_ms", 100.0)
@@ -69,6 +71,8 @@ class ControllerNode(Node):
         self._hardware = hardware or make_hardware(
             self.get_parameter("hardware").value,
             fake_ranges_m=self.get_parameter("fake_ranges_m").value,
+            sim_walls_m=self.get_parameter("sim_walls_m").value,
+            sim_speed_mps=self.get_parameter("sim_speed_mps").value,
         )
         self._slow_write_s = self.get_parameter("slow_write_ms").value / 1000.0
         self._governor = MotorGovernor(

@@ -6,9 +6,10 @@ Motor order is picar-4wd's, everywhere: left front, right front, left rear, righ
 from __future__ import annotations
 
 import math
+import time
 from collections import deque
 from types import ModuleType
-from typing import Iterable, Protocol, Sequence, Tuple, runtime_checkable
+from typing import Callable, Iterable, Protocol, Sequence, Tuple, runtime_checkable
 
 MAX_POWER = 100
 MotorPowers = Tuple[int, int, int, int]
@@ -82,6 +83,52 @@ class FakeRobot:
         self.commands.append(("servo", deg))
 
 
+class SimulatedRobot(FakeRobot):
+    """A fake robot facing a wall, so the ultrasonic range follows the motors.
+
+    Driving forward closes the distance at ``speed_mps`` per unit of normalized power, and
+    reversing opens it. Spinning in place for ``turn_to_clear_s`` (at full power; longer when
+    slower) faces the next distance in ``walls_m``, cycling. Used to run the avoider without a robot.
+    """
+
+    def __init__(
+        self,
+        walls_m: Sequence[float] = (1.0, 0.6, 1.5),
+        speed_mps: float = 0.3,
+        turn_to_clear_s: float = 0.4,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        super().__init__()
+        if not walls_m:
+            raise ValueError("walls_m needs at least one distance")
+        self._walls_m = list(walls_m)
+        self._next_wall = 1 % len(self._walls_m)
+        self._range_m = float(self._walls_m[0])
+        self._speed_mps = speed_mps
+        self._turn_to_clear_s = turn_to_clear_s
+        self._turned_s = 0.0
+        self._clock = clock
+        self._last_s: float | None = None
+
+    def read_range_m(self) -> float | None:
+        now_s = self._clock()
+        dt = 0.0 if self._last_s is None else min(now_s - self._last_s, 0.2)
+        self._last_s = now_s
+        lf, rf, lr, rr = (p / MAX_POWER for p in self.motor_powers)
+        left, right = (lf + lr) / 2.0, (rf + rr) / 2.0
+        forward, spin = (left + right) / 2.0, (right - left) / 2.0
+        if abs(spin) > abs(forward):
+            self._turned_s += abs(spin) * dt
+            if self._turned_s >= self._turn_to_clear_s:
+                self._range_m = float(self._walls_m[self._next_wall])
+                self._next_wall = (self._next_wall + 1) % len(self._walls_m)
+                self._turned_s = 0.0
+        else:
+            self._turned_s = 0.0
+            self._range_m = max(self._range_m - forward * self._speed_mps * dt, 0.0)
+        return self._range_m
+
+
 def _import_library() -> ModuleType:
     import picar_4wd  # only on the robot, and it resets the HAT and claims GPIO when imported
 
@@ -126,13 +173,20 @@ class Picar4WDHardware:
         self._fc.servo.set_angle(deg)
 
 
-HARDWARE_NAMES = ("fake", "picar4wd")
+HARDWARE_NAMES = ("fake", "sim", "picar4wd")
 
 
-def make_hardware(name: str, fake_ranges_m: Iterable[float] = ()) -> RobotHardware:
-    """Build the adapter named by the `hardware` parameter: ``fake`` or ``picar4wd``."""
+def make_hardware(
+    name: str,
+    fake_ranges_m: Iterable[float] = (),
+    sim_walls_m: Sequence[float] = (1.0, 0.6, 1.5),
+    sim_speed_mps: float = 0.3,
+) -> RobotHardware:
+    """Build the adapter named by the `hardware` parameter: ``fake``, ``sim`` or ``picar4wd``."""
     if name == "fake":
         return FakeRobot(fake_ranges_m)
+    if name == "sim":
+        return SimulatedRobot(sim_walls_m, sim_speed_mps)
     if name == "picar4wd":
         return Picar4WDHardware()
     raise ValueError(f"unknown hardware {name!r}; expected one of {HARDWARE_NAMES}")

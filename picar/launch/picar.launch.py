@@ -1,6 +1,7 @@
 """Starts the controller and the planner with config/params.yaml.
 
     ros2 launch picar picar.launch.py hardware:=fake
+    ros2 launch picar picar.launch.py hardware:=sim drive:=true        # fake wall to avoid
     ros2 launch picar picar.launch.py hardware:=picar4wd drive:=true
     ros2 launch picar picar.launch.py hardware:=picar4wd record:=true   # rosbag2 into /data
 """
@@ -25,7 +26,8 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument(
                 "hardware",
                 default_value="fake",
-                description="Hardware adapter: fake (in memory) or picar4wd (the robot).",
+                description="Hardware adapter: fake (scripted ranges), sim (fake range from a "
+                "simulated wall that follows the motors) or picar4wd (the robot).",
             ),
             DeclareLaunchArgument(
                 "drive",

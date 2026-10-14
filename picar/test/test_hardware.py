@@ -4,7 +4,13 @@ from types import SimpleNamespace
 import pytest
 
 from picar import hardware
-from picar.hardware import FakeRobot, Picar4WDHardware, RobotHardware, make_hardware
+from picar.hardware import (
+    FakeRobot,
+    Picar4WDHardware,
+    RobotHardware,
+    SimulatedRobot,
+    make_hardware,
+)
 
 
 class FakeLibrary:
@@ -100,6 +106,67 @@ def test_greyscale_is_the_librarys_three_adc_values():
     )
 
 
+# SimulatedRobot
+
+
+class Clock:
+    def __init__(self) -> None:
+        self.now_s = 0.0
+
+    def __call__(self) -> float:
+        return self.now_s
+
+
+def _sim(clock: Clock) -> SimulatedRobot:
+    robot = SimulatedRobot(walls_m=[1.0, 0.6], speed_mps=0.5, turn_to_clear_s=0.25, clock=clock)
+    assert robot.read_range_m() == pytest.approx(1.0)
+    return robot
+
+
+def test_sim_wall_closes_when_driving_forward_and_opens_in_reverse():
+    clock = Clock()
+    robot = _sim(clock)
+
+    robot.set_motor_power([50, 50, 50, 50])
+    clock.now_s += 0.2
+    assert robot.read_range_m() == pytest.approx(0.95)  # 0.5 power * 0.5 m/s * 0.2 s
+
+    robot.set_motor_power([-100, -100, -100, -100])
+    clock.now_s += 0.1
+    assert robot.read_range_m() == pytest.approx(1.0)
+
+
+def test_sim_wall_holds_still_when_stopped():
+    clock = Clock()
+    robot = _sim(clock)
+
+    clock.now_s += 0.2
+    assert robot.read_range_m() == pytest.approx(1.0)
+
+
+def test_sim_turning_in_place_faces_the_next_wall_cyclically():
+    clock = Clock()
+    robot = _sim(clock)
+    robot.set_motor_power([-50, 50, -50, 50])
+
+    distances = []
+    for _ in range(8):  # turning at half power: a new wall every 0.5 s
+        clock.now_s += 0.125
+        distances.append(robot.read_range_m())
+
+    assert distances == pytest.approx([1.0, 1.0, 1.0, 0.6, 0.6, 0.6, 0.6, 1.0])
+
+
+def test_sim_never_reports_a_negative_range():
+    clock = Clock()
+    robot = _sim(clock)
+    robot.set_motor_power([100, 100, 100, 100])
+
+    for _ in range(50):
+        clock.now_s += 0.2
+        assert robot.read_range_m() >= 0.0
+
+
 # make_hardware
 
 
@@ -108,6 +175,13 @@ def test_fake_plays_back_scripted_ranges():
 
     assert isinstance(robot, FakeRobot)
     assert [robot.read_range_m() for _ in range(3)] == [0.3, 0.1, 0.1]
+
+
+def test_sim_builds_the_simulated_wall():
+    robot = make_hardware("sim", sim_walls_m=[0.7])
+
+    assert isinstance(robot, SimulatedRobot)
+    assert robot.read_range_m() == pytest.approx(0.7)
 
 
 def test_picar4wd_builds_the_adapter(monkeypatch):

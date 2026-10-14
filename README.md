@@ -97,6 +97,7 @@ one terminal and the viewers in another:
 
 ```bash
 ros2 launch picar picar.launch.py hardware:=fake drive:=true   # a clear 1 m path: the planner cruises
+ros2 launch picar picar.launch.py hardware:=sim drive:=true    # a simulated wall: cruise, stop, reverse, turn, repeat
 ros2 launch picar viz.launch.py                                 # RViz (range cone) + rqt topic, graph, plot
 ```
 
