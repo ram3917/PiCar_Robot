@@ -1,38 +1,38 @@
 @startuml state-machine
-title MotionPlanner - avoidance manoeuvre (what the 10-step plan contains)
+title Planner - avoidance manoeuvre (the /cmd_vel it publishes)
 
-[*] --> Disarmed : boot
+[*] --> Idle : boot
 
-Disarmed : no plan published
-Cruise : 10 cruise steps
-Stop : zero power, stop_duration_s
-Reverse : reverse_speed, reverse_duration_s
-Turn : spin counter-clockwise, turn_duration_s
-Fault : plan of zeros
+Idle : drive is false, nothing published
+Cruise : linear.x = cruise_speed
+Stop : zero command, stop_duration_s
+Reverse : linear.x = -reverse_speed, reverse_duration_s
+Turn : angular.z = turn_speed (counter-clockwise), turn_duration_s
+Fault : zero command
 
-Disarmed --> Cruise : frame.armed
-Cruise --> Stop : range < stop_distance_cm
+Idle --> Cruise : drive set to true
+Cruise --> Stop : range < stop_distance_m
 Stop --> Reverse : after stop_duration_s
 Reverse --> Turn : after reverse_duration_s
 Turn --> Cruise : after turn_duration_s
 
-Cruise --> Fault : range invalid or\nframe older than frame_stale_ms
-Fault --> Cruise : valid fresh frame
+Cruise --> Fault : range invalid or\nolder than range_stale_ms
+Fault --> Cruise : valid fresh range
 
-Cruise --> Disarmed : not frame.armed
-Stop --> Disarmed : not frame.armed
-Reverse --> Disarmed : not frame.armed
-Turn --> Disarmed : not frame.armed
+Cruise --> Idle : drive set to false
+Stop --> Idle : drive set to false
+Reverse --> Idle : drive set to false
+Turn --> Idle : drive set to false
 
 note right of Turn
   Stop, Reverse and Turn are one committed manoeuvre.
-  The planner keeps to it on every replan,
+  The planner keeps to it on every step,
   whatever the range says, until it ends.
 end note
 
 note bottom of Cruise
   The controller applies its own limits on top
-  (hard stop, blind stop, plan heartbeat), whatever the plan says.
+  (hard stop, blind stop, command heartbeat), whatever the command says.
 end note
 
 @enduml

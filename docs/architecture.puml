@@ -5,17 +5,14 @@ skinparam componentStyle rectangle
 
 actor Operator
 
-package "picar_ros (ROS 2 nodes)" {
+package "picar (ROS 2 package)" {
   component "controller\n(the only hardware owner)" as controller
-  component "motion_planner" as planner
-}
-
-package "picar_core (pure Python, no ROS)" {
-  component "MotorGovernor\n(plan playback + safety)" as governor
+  component "planner\n(drive parameter)" as planner
+  component "MotorGovernor\n(Twist mixing + safety)" as governor
   component "ReactivePlanner" as reactive
   interface "RobotHardware" as hw
   component "FakeRobot\n(hardware:=fake)" as fake
-  component "PiCar4WD adapter\n(hardware:=picar4wd)" as adapter
+  component "Picar4WDHardware\n(hardware:=picar4wd)" as adapter
 }
 
 node "PiCar-4WD HAT" as hat {
@@ -25,13 +22,13 @@ node "PiCar-4WD HAT" as hat {
   component "Motors x4" as motors
 }
 
-controller --> planner : /controller/range, /controller/armed\n(also greyscale and joint states), ~30 ms
-planner --> controller : /planner/motion_plan\nJointTrajectory, 5-10 Hz
-Operator --> controller : /arm\nstd_srvs/SetBool
+controller --> planner : /controller/range\n(also greyscale and joint states), ~30 ms
+planner --> controller : /cmd_vel\ngeometry_msgs/Twist, 10 Hz
+Operator --> planner : ros2 param set /planner drive true
 
 controller ..> governor : uses
 planner ..> reactive : uses
-controller ..> hw : set_motor_power() / stop()\nread_distance_cm() / read_greyscale()
+controller ..> hw : set_motor_power() / stop()\nread_range_m() / read_greyscale()
 
 fake ..|> hw
 adapter ..|> hw

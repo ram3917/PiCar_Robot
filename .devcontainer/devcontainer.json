@@ -11,7 +11,8 @@
   // keep-alive command runs instead, and the dev container stays up without starting the robot.
   "runArgs": ["--entrypoint=/bin/sh", "--shm-size=1g"],
   // A desktop in the browser for rviz2, rqt and PlotJuggler (no X server needed on Windows).
-  // Open http://localhost:6080 (password: noPassword) once the container is running.
+  // Open http://localhost:6080 (password: noPassword) once the container is running, then run
+  // `ros2 launch picar viz.launch.py` in a terminal.
   "features": {
     "ghcr.io/devcontainers/features/desktop-lite:1": {
       "password": "noPassword"
@@ -37,10 +38,10 @@
         "ms-azuretools.vscode-docker"
       ],
       "settings": {
-        "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+        "python.defaultInterpreterPath": "/usr/bin/python3",
         "python.testing.pytestEnabled": true,
         "python.testing.unittestEnabled": false,
-        "python.testing.pytestArgs": ["core"],
+        "python.testing.pytestArgs": ["picar"],
         "python.testing.cwd": "${workspaceFolder}",
         "files.eol": "\n"
       }

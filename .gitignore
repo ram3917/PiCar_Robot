@@ -19,9 +19,9 @@ env/
 /build/
 /install/
 /log/
-ros/build/
-ros/install/
-ros/log/
+picar/build/
+picar/install/
+picar/log/
 
 # IDE
 .vscode/

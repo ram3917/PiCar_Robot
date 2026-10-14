@@ -1,0 +1,29 @@
+# Node parameters for picar.launch.py. The `hardware` and `drive` launch arguments override the
+# controller's `hardware` and the planner's `drive` values.
+#
+# Tune the planner values on the robot and note the final values in the PR.
+
+controller:
+  ros__parameters:
+    hardware: fake
+    # Scripted readings for the fake hardware, in metres. The last value repeats.
+    fake_ranges_m: [1.0]
+    sensor_period_ms: 30.0   # one range, greyscale and joint-state message per period (a target)
+    motor_tick_ms: 10.0      # how often the motors are updated from the latest command
+    hard_stop_m: 0.10        # forward drive stops when the range is closer than this
+    range_stale_ms: 150.0    # no valid range for this long also stops forward drive
+    cmd_timeout_ms: 500.0    # no new /cmd_vel for this long stops all motors
+    slow_write_ms: 100.0     # warn when one motor write takes longer than this
+
+planner:
+  ros__parameters:
+    drive: false             # the on switch: nothing is commanded while false
+    rate_hz: 10.0            # commands per second
+    stop_distance_m: 0.20    # obstacle closer than this starts stop/reverse/turn
+    cruise_speed: 0.5        # normalized speeds, in (0, 1]
+    reverse_speed: 0.3
+    turn_speed: 0.5
+    stop_duration_s: 0.2
+    reverse_duration_s: 0.4
+    turn_duration_s: 1.0     # how long the turn lasts
+    range_stale_ms: 500.0    # an older range makes the command a stop
