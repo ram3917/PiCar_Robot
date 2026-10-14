@@ -7,7 +7,14 @@
   <maintainer email="61208818+ram3917@users.noreply.github.com">Rama Mallavarapu</maintainer>
   <license>Apache-2.0</license>
 
+  <!-- picar_core is pip-installed into the image, so it is not a rosdep key. -->
+  <buildtool_depend>ament_python</buildtool_depend>
+
   <exec_depend>rclpy</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>std_srvs</exec_depend>
 
   <export>
     <build_type>ament_python</build_type>

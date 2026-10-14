@@ -14,5 +14,9 @@ setup(
     zip_safe=True,
     description="ROS 2 nodes (perception, planning, action) for the PiCar-4WD robot.",
     license="Apache-2.0",
-    entry_points={"console_scripts": []},
+    entry_points={
+        "console_scripts": [
+            "perception_node = picar_ros.perception_node:main",
+        ],
+    },
 )
