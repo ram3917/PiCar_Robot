@@ -11,8 +11,7 @@ license = { text = "Apache-2.0" }
 authors = [{ name = "Rama Mallavarapu" }]
 dependencies = []
 
-[project.optional-dependencies]
-test = ["pytest>=7"]
+# Test tools live in the workspace root's dev group (see ../pyproject.toml).
 
 [tool.setuptools.packages.find]
 include = ["picar_core*"]

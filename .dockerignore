@@ -1,0 +1,15 @@
+# Keep the build context small and free of host-only files (Windows venvs, caches, git).
+.git
+.github
+.claude
+docs
+scripts
+**/.venv
+**/venv
+**/__pycache__
+**/.pytest_cache
+**/.mypy_cache
+**/*.egg-info
+ros/picar_ros/build
+ros/picar_ros/install
+ros/picar_ros/log

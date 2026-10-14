@@ -1,0 +1,26 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  core:
+    name: picar_core (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      # Reads .python-version at the repo root, so every runner uses the same Python.
+      - name: Sync workspace
+        run: uv sync --locked
+
+      - name: Run picar_core tests
+        run: uv run --package picar-core pytest core

@@ -21,7 +21,7 @@ Drive around a room on its own, using only the ultrasonic sensor to avoid obstac
 - Arm / disarm over a ROS service; the robot always boots **disarmed**
 - Safety stops: stale or invalid range → fault and stop; no `/cmd_vel` → motors stop
 - Manual driving with `teleop_twist_keyboard` while disarmed
-- One image, built for `linux/arm64` in CI, pulled onto the Pi with one command
+- One image, built for `linux/arm64` on the dev machine and copied to the Pi by hand
 - Runs without a robot (`hardware:=fake`) for development and smoke tests
 
 **Out of scope for the MVP**
@@ -67,7 +67,7 @@ Drive around a room on its own, using only the ultrasonic sensor to avoid obstac
 
 ```
 core/                pure-Python picar_core package + tests
-ros/picar_ros/       ROS 2 (ament_python) package
+ros/picar_ros/       ROS 2 (ament_python) package + ROS tests
 docker/              Dockerfile and compose.yaml
 scripts/             helper scripts (update.sh, hardware checks)
 docs/                architecture, state machine and deployment docs
@@ -78,27 +78,96 @@ docs/                architecture, state machine and deployment docs
 
 ### Develop on Windows (no robot, no ROS)
 
-Needs Python 3.10 or newer.
+Project and dependencies are managed with [uv](https://docs.astral.sh/uv/). The workspace pins
+Python 3.12 in `.python-version`, so uv installs that version if you do not have it.
 
 ```powershell
-python -m venv .venv
-.venv\Scripts\activate
-pip install -e "core[test]"
-pytest core
+uv sync                                        # creates .venv and installs everything
+uv run --package picar-core pytest core        # run the picar_core tests
+```
+
+The ROS package (`ros/picar_ros`) is built with colcon in the container, not with uv.
+The dev container (`.devcontainer/`) sets all of this up in VS Code.
+
+### Test the ROS layer (dev container)
+
+The `picar_ros` tests (`ros/picar_ros/test/`) need ROS 2, so they run in the dev container
+with the ROS Python, separate from the core tests above. They cover each node with fake
+hardware and launch the whole stack with `picar.launch.py`.
+
+```bash
+scripts/test_ros.sh              # builds picar_ros, then runs its tests
+scripts/test_ros.sh -k planning  # extra arguments go to pytest
 ```
 
 ### Deploy to the Pi
 
-> Not available yet — the image, `compose.yaml` and `update.sh` arrive with MVP-11 to MVP-14.
+The image is built on the dev machine and copied to the Pi by hand. Nothing is pushed to a
+registry and nothing is deployed automatically. Replace `PI_USER@PI_HOST` below with the Pi's
+SSH login (for example `pi@192.168.1.50`).
 
-The Pi needs a 64-bit OS, Docker with the compose plugin, and I2C enabled. Then:
+**Prerequisites**
+
+- Raspberry Pi 3B+ running 64-bit Raspberry Pi OS (Lite)
+- Docker with the compose plugin, and your user in the `docker` group
+- I2C enabled (`sudo raspi-config`, Interface Options)
+- Docker Desktop running on the dev machine, with buildx available
+
+**1. Check the Pi is ready** (on the Pi, from the repo directory)
 
 ```bash
-./scripts/update.sh                    # pull the latest image and restart
-IMAGE_TAG=v0.1.0 ./scripts/update.sh   # roll back to a tagged release
+./scripts/setup_pi.sh    # changes nothing; lists anything to fix
 ```
 
-See [docs/deployment.md](docs/deployment.md).
+**2. Build the arm64 image** (on the dev machine, from the repo root)
+
+```powershell
+docker buildx create --use --name picar 2>$null
+docker buildx build --platform linux/arm64 -f docker/Dockerfile `
+    -t ghcr.io/ram3917/picar_robot:latest --load .
+```
+
+The tag matches the image name in `docker/compose.yaml`, so compose uses it without edits.
+Building for arm64 on an x86 machine runs under emulation and can take a long time.
+
+**3. Save the image to a file and copy it to the Pi**
+
+```powershell
+docker save -o picar.tar ghcr.io/ram3917/picar_robot:latest
+scp picar.tar PI_USER@PI_HOST:~/
+```
+
+The file is several hundred megabytes, so the copy takes a while over Wi-Fi.
+
+**4. Load the image on the Pi**
+
+```bash
+docker load -i ~/picar.tar
+rm ~/picar.tar          # optional: free the space
+```
+
+**5. Get the deployment files onto the Pi**
+
+Copy the `docker/` folder, or check out this branch with `git pull`. The Pi needs
+`docker/compose.yaml` to match the image.
+
+**6. Start the stack** (on the Pi, from the repo root)
+
+```bash
+cd docker
+docker compose up -d --pull never     # use the local image; do not contact the registry
+docker compose ps                     # the picar container should be "running"
+docker compose logs -f picar          # the robot should start DISARMED
+```
+
+**Updating or rolling back**
+
+Repeat steps 2 to 6 with a new image. To stop the stack, run `docker compose down` in `docker/`.
+
+Note that `scripts/update.sh` pulls from the registry and will fail while no image is published
+there. Use the steps above until a registry is set up again.
+
+See [docs/deployment.md](docs/deployment.md) for the planned registry-based pipeline.
 
 ## Documentation
 
