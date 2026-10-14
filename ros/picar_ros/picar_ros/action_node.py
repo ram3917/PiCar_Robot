@@ -8,6 +8,7 @@ import time
 
 import rclpy
 from geometry_msgs.msg import Twist
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 
 from picar_core import Watchdog, command_from_twist, wheel_speeds
@@ -47,9 +48,9 @@ def main(args=None) -> None:
     node = ActionNode()
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
         node.stop_motors()
         node.destroy_node()
-        rclpy.shutdown()
+        rclpy.try_shutdown()  # SIGINT has usually shut the context down already

@@ -1,0 +1,36 @@
+// Development environment for VS Code (Dev Containers / Reopen in Container).
+// Built from the same docker/Dockerfile as docker/compose.yaml, so dev and the robot image
+// share one definition. Robot hardware is not available here: use hardware:=fake.
+{
+  "name": "PiCar_Robot (ROS 2 Jazzy)",
+  "build": {
+    "dockerfile": "../docker/Dockerfile",
+    "context": ".."
+  },
+  // The image's ENTRYPOINT starts the robot launch file. Replace it with a shell so VS Code's
+  // keep-alive command runs instead, and the dev container stays up without starting the robot.
+  "runArgs": ["--entrypoint=/bin/sh"],
+  "containerEnv": {
+    "PYTHONUNBUFFERED": "1"
+  },
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-iot.vscode-ros",
+        "redhat.vscode-xml",
+        "ms-azuretools.vscode-docker"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+        "python.testing.pytestEnabled": true,
+        "python.testing.unittestEnabled": false,
+        "python.testing.pytestArgs": ["core"],
+        "python.testing.cwd": "${workspaceFolder}",
+        "files.eol": "\n"
+      }
+    }
+  }
+}

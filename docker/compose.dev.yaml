@@ -1,0 +1,8 @@
+# Development override for a machine without a robot: no device mappings, fake hardware.
+#
+#   docker compose -f compose.yaml -f compose.dev.yaml run --rm picar
+services:
+  picar:
+    devices: !reset []
+    environment:
+      PICAR_HARDWARE: fake

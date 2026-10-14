@@ -19,6 +19,10 @@
   <exec_depend>std_msgs</exec_depend>
   <exec_depend>std_srvs</exec_depend>
 
+  <test_depend>python3-pytest</test_depend>
+  <test_depend>launch_testing</test_depend>
+  <test_depend>launch_testing_ros</test_depend>
+
   <export>
     <build_type>ament_python</build_type>
   </export>

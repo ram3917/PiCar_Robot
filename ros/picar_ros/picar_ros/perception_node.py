@@ -1,6 +1,7 @@
 """Perception: reads the ultrasonic sensor and publishes `/ultrasonic/range`."""
 
 import rclpy
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from sensor_msgs.msg import Range
 
@@ -46,8 +47,8 @@ def main(args=None) -> None:
     node = PerceptionNode()
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        rclpy.try_shutdown()  # SIGINT has usually shut the context down already

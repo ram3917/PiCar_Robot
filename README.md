@@ -67,7 +67,7 @@ Drive around a room on its own, using only the ultrasonic sensor to avoid obstac
 
 ```
 core/                pure-Python picar_core package + tests
-ros/picar_ros/       ROS 2 (ament_python) package
+ros/picar_ros/       ROS 2 (ament_python) package + ROS tests
 docker/              Dockerfile and compose.yaml
 scripts/             helper scripts (update.sh, hardware checks)
 docs/                architecture, state machine and deployment docs
@@ -78,13 +78,26 @@ docs/                architecture, state machine and deployment docs
 
 ### Develop on Windows (no robot, no ROS)
 
-Needs Python 3.10 or newer.
+Project and dependencies are managed with [uv](https://docs.astral.sh/uv/). The workspace pins
+Python 3.12 in `.python-version`, so uv installs that version if you do not have it.
 
 ```powershell
-python -m venv .venv
-.venv\Scripts\activate
-pip install -e "core[test]"
-pytest core
+uv sync                                        # creates .venv and installs everything
+uv run --package picar-core pytest core        # run the picar_core tests
+```
+
+The ROS package (`ros/picar_ros`) is built with colcon in the container, not with uv.
+The dev container (`.devcontainer/`) sets all of this up in VS Code.
+
+### Test the ROS layer (dev container)
+
+The `picar_ros` tests (`ros/picar_ros/test/`) need ROS 2, so they run in the dev container
+with the ROS Python, separate from the core tests above. They cover each node with fake
+hardware and launch the whole stack with `picar.launch.py`.
+
+```bash
+scripts/test_ros.sh              # builds picar_ros, then runs its tests
+scripts/test_ros.sh -k planning  # extra arguments go to pytest
 ```
 
 ### Deploy to the Pi

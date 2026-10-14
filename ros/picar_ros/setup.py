@@ -13,6 +13,7 @@ setup(
         ("share/" + package_name + "/config", ["config/params.yaml"]),
     ],
     install_requires=["setuptools"],
+    tests_require=["pytest"],
     zip_safe=True,
     description="ROS 2 nodes (perception, planning, action) for the PiCar-4WD robot.",
     license="Apache-2.0",

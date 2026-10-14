@@ -6,6 +6,7 @@ Publishes nothing on `/cmd_vel` while DISARMED so teleop can drive the robot.
 
 import rclpy
 from geometry_msgs.msg import Twist
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from sensor_msgs.msg import Range
 from std_msgs.msg import String
@@ -91,8 +92,8 @@ def main(args=None) -> None:
     node = PlanningNode()
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        rclpy.try_shutdown()  # SIGINT has usually shut the context down already

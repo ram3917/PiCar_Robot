@@ -1,0 +1,16 @@
+# Runs the PiCar stack on the Pi. Updated and rolled back with scripts/update.sh.
+name: picar
+
+services:
+  picar:
+    image: ghcr.io/ram3917/picar_robot:${IMAGE_TAG:-latest}
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    network_mode: host
+    restart: unless-stopped
+    devices:
+      - /dev/i2c-1:/dev/i2c-1
+      - /dev/gpiomem:/dev/gpiomem
+    environment:
+      PICAR_HARDWARE: ${PICAR_HARDWARE:-picar4wd}
