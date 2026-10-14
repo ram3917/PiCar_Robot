@@ -5,8 +5,8 @@ Raspberry Pi 3B+, running **ROS 2 Jazzy** inside Docker.
 
 The robot's logic is split in two layers:
 
-- **`picar_core`** — pure Python, no ROS imports. Hardware interface, state machine and
-  watchdog. Runs and is tested on any machine, including Windows.
+- **`picar_core`** — pure Python, no ROS imports. Hardware interface, reactive planner, and the
+  plan playback with its safety limits. Runs and is tested on any machine, including Windows.
 - **`picar_ros`** — a thin ROS 2 layer of two nodes, a **controller** that owns the hardware and
   a **motion planner**, wrapping the core. `picar_interfaces` holds the messages between them.
 

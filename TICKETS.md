@@ -13,9 +13,9 @@ Labels: `mvp` / `post-mvp`, `afk` (agent can do unattended) / `hitl` (human feed
 | MVP-04 | picar_core: reactive obstacle-avoidance state machine | 🤖 AFK | MVP-03 |
 | MVP-05 | picar_core: command watchdog | 🤖 AFK | MVP-03 |
 | MVP-06 | picar_core: SunFounder picar-4wd hardware adapter | 🧑 Human needed | MVP-03, MVP-15 |
-| MVP-07 | picar_ros: perception node (/ultrasonic/range) | 🤖 AFK | MVP-03 |
-| MVP-08 | picar_ros: planning node (avoider + /arm + /robot_state) | 🤖 AFK | MVP-04, MVP-07 |
-| MVP-09 | picar_ros: action node (motor control + watchdog) | 🤖 AFK | MVP-05, MVP-03 |
+| MVP-07 | picar_ros: perception node (/ultrasonic/range) | 🤖 AFK (superseded by v0.2) | MVP-03 |
+| MVP-08 | picar_ros: planning node (avoider + /arm + /robot_state) | 🤖 AFK (superseded by v0.2) | MVP-04, MVP-07 |
+| MVP-09 | picar_ros: action node (motor control + watchdog) | 🤖 AFK (superseded by v0.2) | MVP-05, MVP-03 |
 | MVP-10 | Launch file + params YAML | 🤖 AFK | MVP-07, MVP-08, MVP-09 |
 | MVP-11 | Dockerfile + compose.yaml (arm64, ros:jazzy-ros-base) | 🤖 AFK | MVP-10 |
 | MVP-12 | CI: test core + build/push arm64 image to GHCR | 🧑 Human needed | MVP-03, MVP-11 |
@@ -25,11 +25,30 @@ Labels: `mvp` / `post-mvp`, `afk` (agent can do unattended) / `hitl` (human feed
 | MVP-16 | Tune avoidance parameters on the real robot | 🧑 Human needed | MVP-06, MVP-14 |
 | MVP-17 | MVP acceptance test + release v0.1.0 | 🧑 Human needed | MVP-16, MVP-02 |
 
+## v0.2
+
+Replaces the MVP's perception, planning and action nodes (MVP-07, MVP-08, MVP-09) with a
+controller that owns the hardware and a motion planner behind fixed messages. The cause was that
+two processes cannot both import `picar_4wd`. See [docs/architecture.md](docs/architecture.md).
+
+| ID | Title | Mode | Status |
+|---|---|---|---|
+| V02-01 | picar_core: per-motor power, `MotionPlan`, `SensorFrame` | 🤖 AFK | Done, tested |
+| V02-02 | picar_core: `ReactivePlanner` (2 s plan of 10 steps) | 🤖 AFK | Done, tested |
+| V02-03 | picar_core: `MotorGovernor` (plan playback, disarm, heartbeat, hard stop, blind stop) | 🤖 AFK | Done, tested |
+| V02-04 | picar_interfaces: `SensorFrame`, `MotionPlan`, `MotorPower` messages | 🤖 AFK | Written, not built |
+| V02-05 | picar_ros: controller node (sole hardware owner, `/arm`, safety) | 🤖 AFK | Written, not run on ROS |
+| V02-06 | picar_ros: motion_planner node | 🤖 AFK | Written, not run on ROS |
+| V02-07 | Docker and launch: rpi-lgpio, `/dev/gpiochip0`, rosbag2 recording, `data/` volume | 🤖 AFK | Written, not built |
+| V02-08 | Run `scripts/test_ros.sh` in the dev container and fix what it finds | 🧑 Human needed | Open |
+| V02-09 | Build and deploy 0.2.0; check frame rate, arm, hard stop, planner heartbeat on the robot | 🧑 Human needed | Open, blocked by V02-08 |
+| V02-10 | Check what the ultrasonic library returns on an open path (-2 may mean clear, not invalid) | 🧑 Human needed | Open |
+
 ## Post-MVP
 
 | ID | Title | Mode | Blocked by |
 |---|---|---|---|
-| POST-01 | Greyscale sensor: edge/cliff detection in perception | 🧑 Human needed | MVP-17 |
+| POST-01 | Greyscale sensor: edge/cliff detection in the controller | 🧑 Human needed | V02-09 |
 | POST-02 | Decide: line-following mode and how it coexists with avoidance | 🧑 Human needed | POST-01 |
 | POST-03 | Wheel-speed odometry (/odom) | 🧑 Human needed | MVP-17 |
 | POST-04 | Goal input: relative (x, y) goal via /goal_pose | 🤖 AFK | POST-03 |
@@ -305,16 +324,16 @@ Checklist on the real robot:
 **Blocked by:** MVP-16 (Tune avoidance parameters on the real robot), MVP-02 (Architecture, state machine and deployment docs (Markdown + PlantUML))
 
 
-## [POST-01] Greyscale sensor: edge/cliff detection in perception
+## [POST-01] Greyscale sensor: edge/cliff detection in the controller
 
 **Mode:** 🧑 Human needed  
 **Milestone:** Post-MVP
 
-Publish `/grayscale/raw` (`std_msgs/UInt16MultiArray`) and `/grayscale/edge_detected` (`std_msgs/Bool`); planning stops/backs off on edge.
+The three greyscale values already arrive in every `SensorFrame` (v0.2) and the planner can read them. Add an edge flag to the frame and make the controller refuse forward drive at an edge, as it does for the ultrasonic hard stop, so it holds for any planner.
 
 **Human needed:** calibrate thresholds on your floor surfaces and at a real table edge.
 
-**Blocked by:** MVP-17 (MVP acceptance test + release v0.1.0)
+**Blocked by:** V02-09 (Build and deploy 0.2.0)
 
 
 ## [POST-02] Decide: line-following mode and how it coexists with avoidance
@@ -324,7 +343,7 @@ Publish `/grayscale/raw` (`std_msgs/UInt16MultiArray`) and `/grayscale/edge_dete
 
 Design decision (grilling session): separate mode vs combined behaviour, mode switching interface, priority vs obstacle avoidance.
 
-**Blocked by:** POST-01 (Greyscale sensor: edge/cliff detection in perception)
+**Blocked by:** POST-01 (Greyscale sensor: edge/cliff detection in the controller)
 
 
 ## [POST-03] Wheel-speed odometry (/odom)
@@ -344,7 +363,7 @@ Read the kit's speed sensors, publish `nav_msgs/Odometry` on `/odom` + TF `odom 
 **Mode:** 🤖 AFK  
 **Milestone:** Post-MVP
 
-Accept `geometry_msgs/PoseStamped` on `/goal_pose` in the `odom` frame; planning exposes goal distance/bearing in the observation.
+Accept `geometry_msgs/PoseStamped` on `/goal_pose` in the `odom` frame; the motion planner exposes goal distance/bearing in its observation (this will need new fields in `SensorFrame` or a second input message).
 
 **Blocked by:** POST-03 (Wheel-speed odometry (/odom))
 
@@ -364,17 +383,17 @@ Open decisions (grilling): learning approach (behaviour cloning vs RL in a 2D si
 **Mode:** 🧑 Human needed  
 **Milestone:** Post-MVP
 
-Deferred from MVP. Decide whether ultrasonic e-stop + watchdog always override an ML policy, and how that is enforced/tested.
+Partly settled in v0.2: the controller's `MotorGovernor` always applies its limits (disarm, plan heartbeat, 10 cm hard stop, blind stop) to whatever plan it receives, so a learned planner cannot bypass them. Still open: whether those limits are enough for an ML policy (acceleration limits, edge stop), and how this is tested.
 
 **Blocked by:** POST-05 (Decide ML approach for ultrasonic goal-seeking)
 
 
-## [POST-07] Implement ML goal-seeking policy behind the Policy interface
+## [POST-07] Implement ML goal-seeking planner as a replacement motion_planner node
 
 **Mode:** 🧑 Human needed  
 **Milestone:** Post-MVP
 
-Implement per POST-05/POST-06 decisions; swap in via param `policy:=reactive|ml`. Human needed for real-robot evaluation.
+Implement per POST-05/POST-06 decisions as a node that subscribes to `/controller/sensor_frame` and publishes `/planner/motion_plan` (10 steps of 4 motor powers), replacing `motion_planner` in the launch file. The message contract stays fixed. It may run on the Pi or off-board. Human needed for real-robot evaluation.
 
 **Blocked by:** POST-05 (Decide ML approach for ultrasonic goal-seeking), POST-06 (Decide safety arbitration: ML policy vs safety supervisor)
 
@@ -384,7 +403,7 @@ Implement per POST-05/POST-06 decisions; swap in via param `policy:=reactive|ml`
 **Mode:** 🤖 AFK  
 **Milestone:** Post-MVP
 
-Launch arg `record:=true` records `/ultrasonic/range`, `/cmd_vel`, `/robot_state` (+ `/odom` when available) to a mounted volume on the Pi. Feeds ML training.
+Done in v0.2 (V02-07, not yet run on the robot): launch arg `record:=true` (container env `PICAR_RECORD=true`) records `/controller/sensor_frame` and `/planner/motion_plan` into the `data/` volume. Remaining: add `/odom` once POST-03 exists, and check the recordings are usable for training.
 
 **Blocked by:** MVP-17 (MVP acceptance test + release v0.1.0)
 
@@ -394,7 +413,7 @@ Launch arg `record:=true` records `/ultrasonic/range`, `/cmd_vel`, `/robot_state
 **Mode:** 🧑 Human needed  
 **Milestone:** Post-MVP
 
-Decide transport (ROS-TCP-Connector vs rosbridge vs native DDS), then Unity scene showing robot state + range, sending `/cmd_vel` and arm/disarm. Add operator heartbeat dead-man switch.
+Decide transport (ROS-TCP-Connector vs rosbridge vs native DDS), then Unity scene showing robot state + range, sending plans (v0.2 has no `/cmd_vel`; manual driving would publish `MotionPlan` messages) and arm/disarm on `/arm`. Add operator heartbeat dead-man switch (the controller's plan heartbeat already stops the motors).
 
 **Blocked by:** MVP-17 (MVP acceptance test + release v0.1.0)
 
@@ -404,7 +423,7 @@ Decide transport (ROS-TCP-Connector vs rosbridge vs native DDS), then Unity scen
 **Mode:** 🧑 Human needed  
 **Milestone:** Post-MVP
 
-Simulated PiCar + ultrasonic in Unity publishing the same topics, so planning runs unchanged in sim and on the real robot.
+Simulated PiCar + ultrasonic in Unity publishing `/controller/sensor_frame` and consuming `/planner/motion_plan`, so the motion planner runs unchanged in sim and on the real robot.
 
 **Blocked by:** POST-09 (Unity integration: teleop + digital twin)
 

@@ -4,7 +4,7 @@
 # The pure-Python core tests are separate: uv run --package picar-core pytest core
 #
 #   scripts/test_ros.sh              # all ROS tests
-#   scripts/test_ros.sh -k planning  # extra arguments go to pytest
+#   scripts/test_ros.sh -k motion_planner  # extra arguments go to pytest
 #
 # No "set -u": the ROS setup scripts read variables that may be unset.
 set -eo pipefail

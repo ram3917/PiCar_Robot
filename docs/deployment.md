@@ -2,8 +2,10 @@
 
 Diagram: [deployment.puml](deployment.puml).
 
-> **Status:** this describes the planned pipeline. The image and `compose.yaml` arrive with
-> MVP-11, CI with MVP-12, `update.sh` with MVP-13 and the Pi setup notes with MVP-14.
+> **Status:** the registry pipeline below (CI, GHCR, `update.sh`) is planned and not set up.
+> Today the image is built on the dev machine and copied to the Pi by hand, as described in
+> [Deploy to the Pi](../README.md#deploy-to-the-pi). The sections on what runs on the Pi and the
+> Pi prerequisites apply either way.
 
 ## Pipeline
 
@@ -45,6 +47,24 @@ IMAGE_TAG=v0.1.0 ./scripts/update.sh
 ```
 
 Any pushed tag works, including `sha-<short>`.
+
+With the manual flow, keep the previous image loaded on the Pi (`docker images` lists it) and
+point compose at it:
+
+```bash
+cd ~/docker
+echo "IMAGE_TAG=<old tag>" > .env
+docker compose up -d --force-recreate --pull never
+```
+
+Recordings and parameters are not part of the image, so a rollback keeps them.
+
+## Recording data
+
+The `data/` folder next to `docker/` is mounted at `/data` in the container. To record the sensor
+frames and plans with rosbag2, set `PICAR_RECORD=true` in `docker/.env` (next to `IMAGE_TAG`) and
+recreate the container. Each start writes a new `picar_<timestamp>` folder, and the folder is
+ignored by git.
 
 ## What runs on the Pi
 

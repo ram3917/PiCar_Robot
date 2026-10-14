@@ -27,10 +27,23 @@ else
     fix "/dev/gpiomem missing; is this a Raspberry Pi?"
 fi
 
-if ls /dev/i2c-* >/dev/null 2>&1; then
-    ok "I2C device present"
+if [ -e /dev/gpiochip0 ]; then
+    ok "/dev/gpiochip0 present"
 else
-    fix "no /dev/i2c-* device; enable I2C with: sudo raspi-config (Interface Options)"
+    fix "/dev/gpiochip0 missing; is this a Raspberry Pi with a current kernel?"
+fi
+
+if [ -e /dev/i2c-1 ]; then
+    ok "/dev/i2c-1 present"
+else
+    fix "no /dev/i2c-1; enable I2C with: sudo raspi-config nonint do_i2c 0, then reboot"
+fi
+
+# A live 'dtparam i2c_arm=on' creates /dev/i2c-1 but is lost on the next reboot.
+if grep -qs '^dtparam=i2c_arm=on' /boot/firmware/config.txt /boot/config.txt; then
+    ok "I2C is enabled in config.txt (survives a reboot)"
+else
+    fix "I2C is not enabled in config.txt; add dtparam=i2c_arm=on (sudo raspi-config nonint do_i2c 0)"
 fi
 
 if command -v docker >/dev/null 2>&1; then

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "picar-core"
 version = "0.0.0"
-description = "Pure-Python core for the PiCar-4WD robot: hardware interface, state machine and watchdog."
+description = "Pure-Python core for the PiCar-4WD robot: hardware interface, motion planner and safety limits."
 requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Rama Mallavarapu" }]
