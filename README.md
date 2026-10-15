@@ -49,8 +49,7 @@ Drive around a room on its own, using only the ultrasonic sensor to avoid obstac
 | `/joint_states` | `sensor_msgs/JointState` | Servo angle (`position`) and applied motor power in percent (`effort`) |
 | `/cmd_vel` | `geometry_msgs/Twist` | `linear.x` and `angular.z`, normalized to [-1, 1]; `angular.z` > 0 turns counter-clockwise |
 
-See [docs/architecture.md](docs/architecture.md) for the details, the safety limits and the full
-parameter list.
+See [docs/architecture.md](docs/architecture.md) for the overview and the safety limits.
 
 ### Parameters
 
@@ -69,7 +68,7 @@ parameter list.
 ```
 picar/               the ROS 2 (ament_python) package: nodes, launch files, config, tests
 docker/              Dockerfile, compose.yaml, entrypoint, Pi check script
-docs/                architecture, state machine and deployment docs
+docs/                architecture overview and diagram
 .devcontainer/       VS Code dev container, built from docker/Dockerfile
 .github/workflows/   CI
 ```
@@ -79,7 +78,7 @@ docs/                architecture, state machine and deployment docs
 ### Develop (dev container)
 
 Open the repo in VS Code and choose *Reopen in Container*. The container has ROS 2 Jazzy, colcon,
-rviz2, rqt and PlotJuggler, and builds the package for you. There is no robot, so use
+rviz2, and builds the package for you. There is no robot, so use
 `hardware:=fake`.
 
 ```bash
@@ -89,38 +88,33 @@ pytest picar                           # unit tests, node tests and the launch t
 
 After editing the package, rebuild with `cd picar && colcon build --symlink-install`.
 
-### Watch the stack run (dev container)
+### Test by hand (dev container)
 
 The dev container has a desktop in your browser at <http://localhost:6080> (password
-`noPassword`), so RViz and rqt work from a Windows host without an X server. Start the stack in
-one terminal and the viewers in another:
+`noPassword`), so RViz works from a Windows host without an X server. One launch file starts the
+stack on fake hardware and RViz, which shows the ultrasonic cone and the four motor powers (green
+forward, red reverse):
 
 ```bash
-ros2 launch picar picar.launch.py hardware:=fake drive:=true   # a clear 1 m path: the planner cruises
-ros2 launch picar picar.launch.py hardware:=sim drive:=true    # a simulated wall: cruise, stop, reverse, turn, repeat
-ros2 launch picar viz.launch.py                                 # RViz (range cone) + rqt topic, graph, plot
+ros2 launch picar manual_test.launch.py                              # a clear 1 m path: the planner cruises
+ros2 launch picar manual_test.launch.py ultrasonic_m:=0.15           # obstacle at 15 cm: stop, reverse, turn
+ros2 launch picar manual_test.launch.py ultrasonic_m:=1.0,0.5,0.15   # scripted readings; the last repeats
+ros2 launch picar manual_test.launch.py drive:=false                 # the robot stays still
 ```
 
-Open <http://localhost:6080> to see the windows. Add `plotjuggler:=true` to also start PlotJuggler.
-Without `drive:=true` the robot stays still; switch it on while running:
+Open <http://localhost:6080> to see RViz. Drive by hand with
+`ros2 topic pub -r 10 /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.5}}"`. The controller's
+10 cm hard stop and 500 ms command timeout are visible in the motor bars too.
 
-```bash
-ros2 param set /planner drive true
-ros2 topic echo /cmd_vel
-```
-
-To see the avoidance manoeuvre, run the nodes with an obstacle at 15 cm instead of the launch file:
-
-```bash
-ros2 run picar controller_node --ros-args -p hardware:=fake -p "fake_ranges_m:=[0.15]" &
-ros2 run picar planner_node --ros-args -p drive:=true
-```
-
-Motor power in the rqt plot then cycles stop, reverse, turn. The controller's 10 cm hard stop and
-500 ms command timeout are visible too: set `drive` back to false, or stop the planner (`Ctrl+C`
-it), and the power falls to zero.
+The package has two launch files: `manual_test.launch.py` (this) and `picar.launch.py`, which the
+Pi image runs.
 
 ### Deploy to the Pi
+
+**Policy:** the Pi image is rebuilt only when the OS changes (a major version update, such as a new
+ROS distro or Ubuntu release). Minor changes are meant to arrive as a `uv` package update. The
+current Dockerfile still bakes the `picar` package into the image, so until that is split out, a
+code change means a rebuild.
 
 The image is built on the dev machine and copied to the Pi by hand. Nothing is pushed to a
 registry and nothing is deployed automatically. Replace `PI_USER@PI_HOST` below with the Pi's
@@ -185,7 +179,8 @@ docker compose logs -f picar          # the robot starts but does not drive
 
 The robot only drives once `drive` is true. Put `PICAR_DRIVE=true` in `docker/.env` and recreate
 the container (`docker compose up -d --pull never`), or switch it on without a restart as
-described in [docs/deployment.md](docs/deployment.md).
+by opening a shell in the container (`docker compose exec picar bash`), sourcing
+`/opt/ros/jazzy/setup.bash` and running `ros2 param set /planner drive true`.
 
 **Updating or rolling back**
 
@@ -195,9 +190,7 @@ run `docker compose down` in `docker/`.
 
 ## Documentation
 
-- [Architecture](docs/architecture.md)
-- [Deployment](docs/deployment.md)
-- Planner manoeuvre: [docs/state-machine.puml](docs/state-machine.puml)
+- [Architecture](docs/architecture.md) and its diagram, [architecture.puml](docs/architecture.puml)
 
 ## Roadmap
 

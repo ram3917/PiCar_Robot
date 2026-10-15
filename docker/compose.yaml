@@ -1,4 +1,4 @@
-# Runs the PiCar stack on the Pi. See docs/deployment.md.
+# Runs the PiCar stack on the Pi. See README.md (Deploy to the Pi).
 name: picar
 
 services:

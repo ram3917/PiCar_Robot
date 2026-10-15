@@ -1,41 +1,37 @@
 @startuml architecture
-title PiCar_Robot - components
+title PiCar_Robot - overview
 
 skinparam componentStyle rectangle
 
-actor Operator
+node "Dev machine" as dev {
+  component "Docker buildx\n(arm64 image)" as build
+}
 
-package "picar (ROS 2 package)" {
-  component "controller\n(the only hardware owner)" as controller
-  component "planner\n(drive parameter)" as planner
-  component "MotorGovernor\n(Twist mixing + safety)" as governor
-  component "ReactivePlanner" as reactive
-  interface "RobotHardware" as hw
-  component "FakeRobot\n(hardware:=fake)" as fake
-  component "Picar4WDHardware\n(hardware:=picar4wd)" as adapter
+node "Raspberry Pi 3B+ (Docker, ROS 2 Jazzy)" as pi {
+  component "planner\nstop > reverse > turn > cruise\n(drive switch, off by default)" as planner
+  component "controller\nonly hardware owner\nsafety limits" as controller
+  interface "RobotHardware\n(fake / picar4wd)" as hw
+  database "rosbag2\n(optional)" as bag
 }
 
 node "PiCar-4WD HAT" as hat {
   component "Ultrasonic sensor" as sonar
-  component "Greyscale ADC x3" as grey
-  component "Servo\n(locked forward)" as servo
   component "Motors x4" as motors
 }
 
-controller --> planner : /controller/range\n(also greyscale and joint states), ~30 ms
-planner --> controller : /cmd_vel\ngeometry_msgs/Twist, 10 Hz
-Operator --> planner : ros2 param set /planner drive true
+controller --> planner : /controller/range
+planner --> controller : /cmd_vel (Twist)
+controller ..> hw
+hw --> sonar
+hw --> motors
+controller ..> bag : record
+planner ..> bag : record
 
-controller ..> governor : uses
-planner ..> reactive : uses
-controller ..> hw : set_motor_power() / stop()\nread_range_m() / read_greyscale()
+build --> pi : docker save, scp,\ndocker load, compose up
 
-fake ..|> hw
-adapter ..|> hw
-
-adapter --> sonar
-adapter --> grey
-adapter --> servo
-adapter --> motors
+note bottom of planner
+  Any node publishing /cmd_vel
+  can replace the planner.
+end note
 
 @enduml

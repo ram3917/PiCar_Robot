@@ -49,13 +49,13 @@ fi
 if command -v docker >/dev/null 2>&1; then
     ok "docker installed"
 else
-    fix "docker not installed; see docs/deployment.md"
+    fix "docker not installed; see README.md (Deploy to the Pi)"
 fi
 
 if docker compose version >/dev/null 2>&1; then
     ok "docker compose plugin installed"
 else
-    fix "docker compose plugin missing; see docs/deployment.md"
+    fix "docker compose plugin missing; see README.md (Deploy to the Pi)"
 fi
 
 if id -nG | tr ' ' '\n' | grep -qx docker; then
@@ -65,7 +65,7 @@ else
 fi
 
 if [ "$problems" -eq 0 ]; then
-    echo "Ready. Next: load the image and start it, see docs/deployment.md"
+    echo "Ready. Next: load the image and start it, see README.md (Deploy to the Pi)"
 else
     echo "${problems} item(s) to fix, then run this again."
     exit 1

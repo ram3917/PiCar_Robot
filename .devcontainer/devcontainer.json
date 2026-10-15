@@ -12,7 +12,7 @@
   "runArgs": ["--entrypoint=/bin/sh", "--shm-size=1g"],
   // A desktop in the browser for rviz2, rqt and PlotJuggler (no X server needed on Windows).
   // Open http://localhost:6080 (password: noPassword) once the container is running, then run
-  // `ros2 launch picar viz.launch.py` in a terminal.
+  // `ros2 launch picar manual_test.launch.py` in a terminal.
   "features": {
     "ghcr.io/devcontainers/features/desktop-lite:1": {
       "password": "noPassword"

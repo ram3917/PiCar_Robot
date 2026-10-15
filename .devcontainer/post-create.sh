@@ -8,7 +8,7 @@ set -eo pipefail
 
 repo="$(cd "$(dirname "$0")/.." && pwd)"
 
-# Viewers for watching the stack run (ros2 launch picar viz.launch.py). They live here, not in
+# Viewers for watching the stack run (ros2 launch picar manual_test.launch.py). They live here, not in
 # docker/Dockerfile, to keep the robot image small.
 apt-get update
 apt-get install -y --no-install-recommends \
@@ -31,4 +31,4 @@ colcon build --symlink-install --packages-select picar
 
 echo "Dev container ready. In each terminal: source picar/install/setup.bash"
 echo "Tests: pytest picar. Stack: ros2 launch picar picar.launch.py hardware:=fake drive:=true"
-echo "Viewers: ros2 launch picar viz.launch.py, then open http://localhost:6080"
+echo "Viewers: ros2 launch picar manual_test.launch.py, then open http://localhost:6080"
