@@ -1,0 +1,65 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Enabled: true
+      Name: Grid
+      Plane Cell Count: 10
+      Cell Size: 0.5
+      Value: true
+    # The ultrasonic cone. Its frame is the fixed frame below, so no TF is needed.
+    - Class: rviz_default_plugins/Range
+      Enabled: true
+      Name: Ultrasonic range
+      Alpha: 0.6
+      Buffer Length: 1
+      Color: 255; 170; 0
+      Queue Size: 10
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /controller/range
+      Value: true
+    # The four motor powers, drawn by motor_markers_node (green forward, red reverse).
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: Motors
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /picar/motor_markers
+      Value: true
+  Enabled: true
+  Global Options:
+    Background Color: 48; 48; 48
+    Fixed Frame: ultrasonic_link
+    Frame Rate: 30
+  Name: root
+  Tools:
+    - Class: rviz_default_plugins/MoveCamera
+  Value: true
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 1.5
+      Focal Point:
+        X: -0.15
+        Y: 0
+        Z: 0
+      Name: Current View
+      Pitch: 0.8
+      Yaw: 3.0
+      Value: Orbit (rviz)
+    Saved: ~
+Window Geometry:
+  Displays:
+    collapsed: false
+  Height: 800
+  Width: 1200

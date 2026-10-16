@@ -1,6 +1,6 @@
-# The PiCar image: ROS 2 Jazzy, picar_core, picar_interfaces, picar_ros and SunFounder's
-# picar-4wd library.
-# Built for linux/arm64 in CI; a linux/amd64 build works for smoke tests on a dev box.
+# The PiCar base image: ROS 2 Jazzy, uv, SunFounder's picar-4wd library. It does not contain the
+# picar package. That is installed from a GitHub Release by install_picar.sh, so this image
+# changes only when the OS, ROS or picar-4wd change. Built for linux/arm64 for the Pi.
 FROM ros:jazzy-ros-base
 
 # uv installs Python packages into the ROS system Python (rclpy lives there too).
@@ -13,8 +13,9 @@ ARG PICAR_4WD_REF=61de4663716098d1257e148a6181d023f4c69475
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         build-essential \
+        ca-certificates \
+        curl \
         git \
-        python3-colcon-common-extensions \
         python3-dev \
         python3-smbus \
         ros-jazzy-rosbag2 \
@@ -31,19 +32,19 @@ RUN uv pip install --system --break-system-packages rpi-lgpio smbus2 \
     && rm -rf /tmp/picar-4wd
 ENV PYTHONPATH=/opt/picar-4wd
 
+# picar-4wd reads its motor-reverse flags and servo offset from ~/.picar-4wd/config, under the
+# first folder in /home, and prints an error for each setting when the file is missing. An empty
+# file keeps the defaults quietly. To flip a motor, add e.g. "left_front_reverse = True" to it.
+RUN user="$(ls /home | head -n 1)" \
+    && mkdir -p "/home/${user}/.picar-4wd" \
+    && touch "/home/${user}/.picar-4wd/config"
+
+# The ROS and picar environment, for shells opened with `docker compose exec picar bash`.
+# The entrypoint and install_picar.sh source the same file.
 WORKDIR /ws
-
-COPY core /ws/core
-RUN uv pip install --system --break-system-packages /ws/core
-
-COPY ros/picar_interfaces /ws/src/picar_interfaces
-COPY ros/picar_ros /ws/src/picar_ros
-RUN . /opt/ros/jazzy/setup.sh \
-    && colcon build --packages-select picar_interfaces picar_ros \
-    && rm -rf /ws/build /ws/log /ws/src
-
-COPY docker/entrypoint.sh /ws/entrypoint.sh
-RUN chmod +x /ws/entrypoint.sh
+COPY docker/picar_env.sh docker/entrypoint.sh docker/install_picar.sh /ws/
+RUN chmod +x /ws/entrypoint.sh /ws/install_picar.sh \
+    && echo 'source /ws/picar_env.sh' >> /etc/bash.bashrc
 
 ENV PYTHONUNBUFFERED=1
 ENTRYPOINT ["/ws/entrypoint.sh"]

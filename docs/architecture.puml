@@ -1,50 +1,37 @@
 @startuml architecture
-title PiCar_Robot - components
+title PiCar_Robot - overview
 
 skinparam componentStyle rectangle
 
-actor Operator
-
-package "picar_ros (ROS 2 nodes)" {
-  component "controller\n(the only hardware owner)" as controller
-  component "motion_planner" as planner
+node "Dev machine" as dev {
+  component "Docker buildx\n(arm64 image)" as build
 }
 
-package "picar_interfaces" {
-  component "SensorFrame\nMotionPlan\nMotorPower" as msgs
-}
-
-package "picar_core (pure Python, no ROS)" {
-  component "MotorGovernor\n(plan playback + safety)" as governor
-  component "ReactivePlanner" as reactive
-  interface "RobotHardware" as hw
-  component "FakeRobot\n(hardware:=fake)" as fake
-  component "PiCar4WD adapter\n(hardware:=picar4wd)" as adapter
+node "Raspberry Pi 3B+ (Docker, ROS 2 Jazzy)" as pi {
+  component "planner\nstop > reverse > turn > cruise\n(drive switch, off by default)" as planner
+  component "controller\nonly hardware owner\nsafety limits" as controller
+  interface "RobotHardware\n(fake / picar4wd)" as hw
+  database "rosbag2\n(optional)" as bag
 }
 
 node "PiCar-4WD HAT" as hat {
   component "Ultrasonic sensor" as sonar
-  component "Greyscale ADC x3" as grey
-  component "Servo\n(locked forward)" as servo
   component "Motors x4" as motors
 }
 
-controller --> planner : /controller/sensor_frame\nSensorFrame, ~30 ms
-planner --> controller : /planner/motion_plan\nMotionPlan, 5-10 Hz
-Operator --> controller : /arm\nstd_srvs/SetBool
+controller --> planner : /controller/range
+planner --> controller : /cmd_vel (Twist)
+controller ..> hw
+hw --> sonar
+hw --> motors
+controller ..> bag : record
+planner ..> bag : record
 
-controller ..> governor : uses
-planner ..> reactive : uses
-controller ..> hw : set_motor_power() / stop()\nread_distance_cm() / read_greyscale()
-controller ..> msgs
-planner ..> msgs
+build --> pi : docker save, scp,\ndocker load, compose up
 
-fake ..|> hw
-adapter ..|> hw
-
-adapter --> sonar
-adapter --> grey
-adapter --> servo
-adapter --> motors
+note bottom of planner
+  Any node publishing /cmd_vel
+  can replace the planner.
+end note
 
 @enduml

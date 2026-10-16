@@ -1,0 +1,51 @@
+name: release
+
+# Publishes the picar wheel for a version tag. A tag must be v<major>.<minor>.<patch> and point at
+# a commit on main. The wheel's version comes from the tag. Pushes to main build nothing here.
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  test:
+    uses: ./.github/workflows/test.yml
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # to create the GitHub Release
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # the tag check below needs the history of main
+
+      - name: Check the tag
+        run: |
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::tag '$GITHUB_REF_NAME' is not v<major>.<minor>.<patch>"
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::tag $GITHUB_REF_NAME does not point at a commit on main"
+            exit 1
+          fi
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Build the wheel and its checksum
+        env:
+          PICAR_BUILD_VERSION: ${{ github.ref_name }}
+        run: |
+          export PICAR_BUILD_VERSION="${PICAR_BUILD_VERSION#v}"
+          uv build --wheel --out-dir dist picar
+          cd dist
+          sha256sum picar-*.whl > "$(ls picar-*.whl).sha256"
+          ls -l
+
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/*.whl dist/*.sha256 \
+            --verify-tag --title "picar ${GITHUB_REF_NAME#v}" --generate-notes

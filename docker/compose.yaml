@@ -1,14 +1,13 @@
-# Runs the PiCar stack on the Pi. Updated and rolled back with scripts/update.sh.
+# Runs the PiCar stack on the Pi. See README.md (Deploy to the Pi).
+# The image is the base image, copied to the Pi with scp. The picar release it runs is installed
+# into the picar-install volume by install_picar.sh, from PICAR_VERSION in docker/.env.
 name: picar
 
 services:
   picar:
-    image: ghcr.io/ram3917/picar_robot:${IMAGE_TAG:-latest}
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-    network_mode: host
+    image: picar:${IMAGE_TAG:-latest}
     restart: unless-stopped
+    network_mode: host
     devices:
       - /dev/i2c-1:/dev/i2c-1
       - /dev/gpiomem:/dev/gpiomem
@@ -16,9 +15,20 @@ services:
     volumes:
       # rosbag2 recordings (PICAR_RECORD=true) land here, next to this file's folder.
       - ../data:/data
+      # The installed picar release (/opt/picar/current). Kept across restarts and reboots.
+      - picar-install:/opt/picar
     environment:
+      # The release to run, a version number such as 0.3.0 (docker/.env). install_picar.sh reads it.
+      PICAR_VERSION: ${PICAR_VERSION:-}
+      # The GitHub repository that publishes the releases.
+      PICAR_REPO: ${PICAR_REPO:-ram3917/PiCar_Robot}
       PICAR_HARDWARE: ${PICAR_HARDWARE:-picar4wd}
+      # false keeps the robot still; true lets the planner drive. Or: ros2 param set /planner drive true
+      PICAR_DRIVE: ${PICAR_DRIVE:-false}
       PICAR_RECORD: ${PICAR_RECORD:-false}
       # Pi 3 Model B+ board revision (from /proc/cpuinfo on the host). The container cannot read
       # /proc/device-tree, so rpi-lgpio needs it here.
       RPI_LGPIO_REVISION: a020d3
+
+volumes:
+  picar-install:

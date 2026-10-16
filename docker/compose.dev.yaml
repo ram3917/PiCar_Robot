@@ -1,5 +1,8 @@
 # Development override for a machine without a robot: no device mappings, fake hardware.
+# The entrypoint runs the installed picar release, so this needs one installed first, or use the
+# dev container (.devcontainer), which builds picar from the mounted source with colcon.
 #
+#   docker build -f docker/Dockerfile -t picar:latest .
 #   docker compose -f compose.yaml -f compose.dev.yaml run --rm picar
 services:
   picar:

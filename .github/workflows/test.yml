@@ -3,24 +3,26 @@ name: test
 on:
   push:
   pull_request:
+  workflow_call:  # release.yml runs these tests before it publishes a wheel
 
 jobs:
-  core:
-    name: picar_core (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
+  picar:
+    name: picar tests (ROS 2 Jazzy)
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v6
+      - name: Build the dev image
+        run: docker build -f docker/Dockerfile -t picar-test .
 
-      # Reads .python-version at the repo root, so every runner uses the same Python.
-      - name: Sync workspace
-        run: uv sync --locked
-
-      - name: Run picar_core tests
-        run: uv run --package picar-core pytest core
+      # The image holds ROS 2 and picar-4wd; the tests run against the source in picar/.
+      - name: Build and test the package
+        run: |
+          docker run --rm --entrypoint bash -v "$PWD/picar:/ws/src/picar" -w /ws picar-test -c '
+            set -eo pipefail
+            source /opt/ros/jazzy/setup.bash
+            rm -rf install
+            colcon build --symlink-install --packages-select picar
+            source install/setup.bash
+            python3 -m pytest src/picar
+          '
