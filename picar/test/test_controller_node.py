@@ -1,10 +1,18 @@
+import math
+
 import pytest
 from geometry_msgs.msg import Twist
-from sensor_msgs.msg import JointState, Range
+from sensor_msgs.msg import JointState, LaserScan, Range
 from std_msgs.msg import UInt16MultiArray
 
 from picar.controller_node import ControllerNode
-from picar.interface import CMD_VEL_TOPIC, GREYSCALE_TOPIC, JOINT_STATES_TOPIC, RANGE_TOPIC
+from picar.interface import (
+    CMD_VEL_TOPIC,
+    GREYSCALE_TOPIC,
+    JOINT_STATES_TOPIC,
+    RANGE_TOPIC,
+    SCAN_TOPIC,
+)
 
 from conftest import twist
 
@@ -131,4 +139,81 @@ def test_destroying_the_node_stops_the_motors(controller):
     node.destroy_node()
     controller.node = None  # already destroyed; keep the harness from doing it twice
 
+    assert node._hardware.motor_powers == STOPPED
+
+
+# The servo sweep
+
+SWEEP = dict(sweep_enabled=True, sweep_min_deg=-10.0, sweep_max_deg=10.0, sweep_step_deg=5.0)
+
+
+@pytest.fixture
+def swept(ros):
+    ros.start(ControllerNode, hardware="fake", fake_ranges_m=[1.0], **SWEEP)
+    ros.ranges = ros.record(Range, RANGE_TOPIC)
+    ros.joints = ros.record(JointState, JOINT_STATES_TOPIC)
+    ros.scans = ros.record(LaserScan, SCAN_TOPIC)
+    return ros
+
+
+def _servo_commands(node) -> list[float]:
+    return [command[1] for command in node._hardware.commands if command[0] == "servo"]
+
+
+def test_the_servo_steps_through_the_sweep_and_back(swept):
+    swept.spin_for(0.5)
+
+    servo = _servo_commands(swept.node)
+    # Starts forward, then sweeps -10 .. 10 .. -10, repeating. Angles already set are not rewritten.
+    assert servo[:14] == [0.0, -10.0, -5.0, 0.0, 5.0, 10.0, 5.0, 0.0, -5.0, -10.0, -5.0, 0.0, 5.0, 10.0]
+
+
+def test_each_pass_publishes_one_scan_covering_the_sweep(swept):
+    swept.spin_for(1.0)
+
+    assert len(swept.scans) >= 3
+    scan = swept.scans[0]
+    assert scan.angle_min == pytest.approx(math.radians(-10))
+    assert scan.angle_max == pytest.approx(math.radians(10))
+    assert scan.angle_increment == pytest.approx(math.radians(5))
+    assert len(scan.ranges) == 5
+    assert list(scan.ranges) == pytest.approx([1.0] * 5)  # the fake reads 1 m at every angle
+
+
+def test_joint_states_report_the_servo_angle_in_radians(swept):
+    swept.spin_for(0.5)
+
+    positions = {round(math.degrees(joints.position[0]), 6) for joints in swept.joints}
+    assert positions == {-10.0, -5.0, 0.0, 5.0, 10.0}
+
+
+def test_a_sweep_that_misses_forward_readings_still_publishes_no_range(ros):
+    # Sweeping -45 .. 45 in 15 degree steps: only -15, 0 and 15 are inside the forward cone.
+    ros.start(
+        ControllerNode, hardware="fake", fake_ranges_m=[1.0],
+        sweep_enabled=True, sweep_min_deg=-45.0, sweep_max_deg=45.0, sweep_step_deg=15.0,
+    )
+    ranges = ros.record(Range, RANGE_TOPIC)
+    joints = ros.record(JointState, JOINT_STATES_TOPIC)
+
+    ros.spin_for(1.0)
+
+    assert ranges and len(ranges) < len(joints)
+
+
+def test_the_sweep_is_off_by_default(controller):
+    controller.spin_for(0.5)
+
+    assert set(_servo_commands(controller.node)) == {0.0}
+    assert controller.node.get_parameter("sweep_enabled").value is False
+
+
+def test_destroying_the_node_returns_the_servo_to_forward(swept):
+    swept.spin_for(0.3)
+    node = swept.node
+    swept.executor.remove_node(node)
+    node.destroy_node()
+    swept.node = None  # already destroyed; keep the harness from doing it twice
+
+    assert node._hardware.commands[-1] == ("servo", 0.0)
     assert node._hardware.motor_powers == STOPPED

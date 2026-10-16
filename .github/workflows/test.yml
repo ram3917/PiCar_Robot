@@ -3,6 +3,7 @@ name: test
 on:
   push:
   pull_request:
+  workflow_call:  # release.yml runs these tests before it publishes a wheel
 
 jobs:
   picar:
@@ -14,7 +15,7 @@ jobs:
       - name: Build the dev image
         run: docker build -f docker/Dockerfile -t picar-test .
 
-      # The image holds the built package; the tests run against the source in picar/.
+      # The image holds ROS 2 and picar-4wd; the tests run against the source in picar/.
       - name: Build and test the package
         run: |
           docker run --rm --entrypoint bash -v "$PWD/picar:/ws/src/picar" -w /ws picar-test -c '

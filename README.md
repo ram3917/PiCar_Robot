@@ -8,28 +8,35 @@ hardware and a **planner**, talking over standard ROS messages. The planner driv
 `geometry_msgs/Twist` on `/cmd_vel`, so any node that publishes there (teleop, a learned model)
 can replace it.
 
-## v0.2 scope
+## v0.3 scope
 
-Drive around a room on its own, using only the ultrasonic sensor to avoid obstacles.
+The ultrasonic sensor sweeps the room and publishes a scan, while the robot stays still. Driving
+and avoidance come back in a later version, once the sweep has been tested on the robot.
 
 **In scope**
 
-- Reactive avoidance: cruise → stop → reverse → turn → cruise
-- Ultrasonic sensor fixed facing forward (servo locked), a range about every 30 ms
+- Ultrasonic servo sweep from −90° to +90° and back, one step per 30 ms. Each pass publishes one
+  `sensor_msgs/LaserScan` on `/controller/scan`
+- Only readings within 15° of straight ahead count as the forward range, so the drive safety rules
+  never act on a reading from the side
+- The motors stay stopped. The planner's `drive` is false by default, so nothing moves unless it is
+  turned on
+- Reactive avoidance code (cruise → stop → reverse → turn → cruise) stays in the planner, off by
+  default
 - The controller is the only process that touches the hardware, and enforces the safety limits
 - A `drive` parameter on the planner is the on switch; it is **off** by default
-- Safety stops: no new command for 500 ms, forward range under 10 cm, no valid range for 150 ms
+- Safety stops: no new command for 500 ms, forward range under 25 cm, no forward range for 1.5 s
 - rosbag2 recording of sensor topics and commands (`PICAR_RECORD=true`)
 - Runs without a robot (`hardware:=fake`) for development and smoke tests
 
-**Out of scope for v0.2**
+**Out of scope for v0.3**
 
 - Edge/cliff stops and line following (the greyscale values are published, but unused)
 - Wheel-speed odometry, `/odom`, goal-seeking
 - The machine-learned planner itself
 - Unity teleop / digital twin / simulator
 - Camera stream
-- Servo sweeping, mapping, SLAM, IMU
+- Driving while sweeping, mapping, SLAM, IMU
 
 ## Interfaces
 
@@ -37,14 +44,15 @@ Drive around a room on its own, using only the ultrasonic sensor to avoid obstac
 
 | Node | Role | Subscribes | Publishes |
 |---|---|---|---|
-| controller | Owns all hardware, applies the command to the motors, enforces safety | `/cmd_vel` | `/controller/range`, `/controller/greyscale`, `/joint_states` |
+| controller | Owns all hardware, sweeps the servo, applies the command to the motors, enforces safety | `/cmd_vel` | `/controller/range`, `/controller/scan`, `/controller/greyscale`, `/joint_states` |
 | planner | Plans the next command from the latest range, while `drive` is true | `/controller/range` | `/cmd_vel` |
 
 ### Topics
 
 | Name | Type | Notes |
 |---|---|---|
-| `/controller/range` | `sensor_msgs/Range` | About every 30 ms (a target); invalid readings are NaN (REP 117) |
+| `/controller/range` | `sensor_msgs/Range` | The forward range, about every 30 ms while the servo is forward; only readings within 15° of forward are published here (a target); invalid readings are NaN (REP 117) |
+| `/controller/scan` | `sensor_msgs/LaserScan` | One sweep, published at the end of each pass (about every 1.1 s). Angles in radians, positive to the left; invalid or missing readings are NaN, clear is +inf |
 | `/controller/greyscale` | `std_msgs/UInt16MultiArray` | The three greyscale ADC values |
 | `/joint_states` | `sensor_msgs/JointState` | Servo angle (`position`) and applied motor power in percent (`effort`) |
 | `/cmd_vel` | `geometry_msgs/Twist` | `linear.x` and `angular.z`, normalized to [-1, 1]; `angular.z` > 0 turns counter-clockwise |
@@ -56,8 +64,10 @@ See [docs/architecture.md](docs/architecture.md) for the overview and the safety
 | Parameter | Node | Meaning |
 |---|---|---|
 | `hardware` | controller | `fake` or `picar4wd` — which hardware adapter to use |
-| `hard_stop_m` | controller | Forward drive stops closer than this (default 0.10) |
-| `range_stale_ms` | controller | No valid range for this long stops forward drive (default 150) |
+| `sweep_enabled` | controller | Sweep the ultrasonic servo (default `false` in the node, `true` in `params.yaml`) |
+| `sweep_min_deg`, `sweep_max_deg`, `sweep_step_deg` | controller | The sweep: −90 to 90 in 5° steps |
+| `hard_stop_m` | controller | Forward drive stops closer than this (default 0.25 in `params.yaml`) |
+| `range_stale_ms` | controller | No forward range for this long stops forward drive (default 1500 in `params.yaml`: one sweep pass) |
 | `cmd_timeout_ms` | controller | No new command for this long stops all motors (default 500) |
 | `drive` | planner | The on switch (default `false`) |
 | `stop_distance_m` | planner | Obstacle closer than this starts the stop/reverse/turn manoeuvre |
@@ -67,7 +77,7 @@ See [docs/architecture.md](docs/architecture.md) for the overview and the safety
 
 ```
 picar/               the ROS 2 (ament_python) package: nodes, launch files, config, tests
-docker/              Dockerfile, compose.yaml, entrypoint, Pi check script
+docker/              base image Dockerfile, compose.yaml, entrypoint, install_picar.sh, smoke test, Pi check script
 docs/                architecture overview and diagram
 .devcontainer/       VS Code dev container, built from docker/Dockerfile
 .github/workflows/   CI
@@ -104,25 +114,23 @@ ros2 launch picar manual_test.launch.py drive:=false                 # the robot
 
 Open <http://localhost:6080> to see RViz. Drive by hand with
 `ros2 topic pub -r 10 /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.5}}"`. The controller's
-10 cm hard stop and 500 ms command timeout are visible in the motor bars too.
+25 cm hard stop and 500 ms command timeout are visible in the motor bars too.
 
 The package has two launch files: `manual_test.launch.py` (this) and `picar.launch.py`, which the
 Pi image runs.
 
 ### Deploy to the Pi
 
-**Policy:** the Pi image is rebuilt only when the OS changes (a major version update, such as a new
-ROS distro or Ubuntu release). Minor changes are meant to arrive as a `uv` package update. The
-current Dockerfile still bakes the `picar` package into the image, so until that is split out, a
-code change means a rebuild.
+The Pi runs two things, each with its own cadence:
 
-The image is built on the dev machine and copied to the Pi by hand. Nothing is pushed to a
-registry and nothing is deployed automatically. Replace `PI_USER@PI_HOST` below with the Pi's
-SSH login (for example `pi@192.168.1.50`).
+- **The base image** (rare: an OS, ROS or picar-4wd change). It holds Ubuntu, ROS 2 Jazzy, `uv` and
+  picar-4wd. It does not hold picar. You build it here and copy it to the Pi by hand.
+- **The picar release** (often). A `v<version>` tag on `main` is published as a GitHub Release with
+  the wheel. The Pi installs it into a volume with `install_picar.sh`, and runs it.
 
 **Prerequisites**
 
-- Raspberry Pi 3B+ running 64-bit Raspberry Pi OS (Lite)
+- Raspberry Pi 3B+ running 64-bit Raspberry Pi OS (Lite), on Wi-Fi
 - Docker with the compose plugin, and your user in the `docker` group
 - I2C enabled permanently: `dtparam=i2c_arm=on` in `/boot/firmware/config.txt` (or
   `sudo raspi-config nonint do_i2c 0`), then a reboot. `/dev/i2c-1` must exist
@@ -134,59 +142,79 @@ SSH login (for example `pi@192.168.1.50`).
 ./docker/check_pi.sh    # changes nothing; lists anything to fix
 ```
 
-**2. Build the arm64 image** (on the dev machine, from the repo root)
+**2. Copy the base image** (only when it changes; on the dev machine, from the repo root)
 
 ```powershell
 docker buildx create --use --name picar 2>$null
-docker buildx build --platform linux/arm64 -f docker/Dockerfile `
-    -t picar:0.2.0 --load .
-```
-
-The image name matches `docker/compose.yaml`; compose picks the tag from `IMAGE_TAG` (step 6).
-Building for arm64 on an x86 machine runs under emulation and can take a long time.
-
-**3. Save the image to a file and copy it to the Pi**
-
-```powershell
-docker save -o picar.tar picar:0.2.0
+docker buildx build --platform linux/arm64 -f docker/Dockerfile -t picar:latest --load .
+docker save -o picar.tar picar:latest
 scp picar.tar PI_USER@PI_HOST:~/
 ```
 
-The file is several hundred megabytes, so the copy takes a while over Wi-Fi.
-
-**4. Load the image on the Pi**
+On the Pi, load it and free the file:
 
 ```bash
-docker load -i ~/picar.tar
-rm ~/picar.tar          # optional: free the space
+docker load -i ~/picar.tar && rm ~/picar.tar
 ```
 
-**5. Get the deployment files onto the Pi**
+**3. Get the deployment files onto the Pi**
 
-Copy the `docker/` folder, or check out this branch with `git pull`. The Pi needs
-`docker/compose.yaml` to match the image.
+Copy the `docker/` folder, or check out `main` with `git pull`.
 
-**6. Start the stack** (on the Pi, from the repo root)
+**4. Choose the release** (on the Pi, in `docker/`, first time only)
 
 ```bash
-cd docker
-echo "IMAGE_TAG=0.2.0" > .env           # which image tag compose runs
-mkdir -p ../data                      # rosbag2 recordings are written here
-docker compose up -d --pull never     # use the local image; do not contact a registry
-docker compose ps                     # the picar container should be "running"
-docker compose logs -f picar          # the robot starts but does not drive
+cp .env.example .env     # then edit .env and set PICAR_VERSION, e.g. PICAR_VERSION=0.3.0
 ```
 
-The robot only drives once `drive` is true. Put `PICAR_DRIVE=true` in `docker/.env` and recreate
-the container (`docker compose up -d --pull never`), or switch it on without a restart as
-by opening a shell in the container (`docker compose exec picar bash`), sourcing
-`/opt/ros/jazzy/setup.bash` and running `ros2 param set /planner drive true`.
+**5. Install the release** (only when `PICAR_VERSION` changes)
+
+```bash
+docker compose run --rm --entrypoint /ws/install_picar.sh picar
+```
+
+It downloads `picar-<version>-py3-none-any.whl` and its `.sha256` from GitHub Release `v<version>`,
+checks the checksum, and installs into the `picar-install` volume. The old release is deleted only
+after the new one installs. If the download or checksum fails, the old release stays.
+
+**6. Start the stack** (on the Pi, in `docker/`)
+
+```bash
+docker compose up -d                  # runs the installed release; the robot stays still
+docker compose logs -f picar
+```
+
+`docker compose up -d` does not download anything. The container restarts on reboot and runs the
+installed release again. The robot only drives once `PICAR_DRIVE=true` is set in `docker/.env` and
+the stack is recreated (`docker compose up -d`). Stop it with `docker compose down`.
+
+**Publishing a release** (on the dev machine)
+
+Merge to `main`, then tag the merge commit:
+
+```bash
+git tag v0.3.0 && git push origin v0.3.0
+```
+
+The `release` workflow runs the tests, builds the wheel with the version from the tag, and creates
+the GitHub Release. A tag must be `v<major>.<minor>.<patch>` and point at a commit on `main`, or the
+workflow stops. Pushes to `main` build nothing.
+
+**Before merging: the smoke test** (on the dev machine, needs Docker)
+
+```bash
+docker/smoke_test.sh
+```
+
+It builds the base image and a wheel from this checkout, installs it with the same script the Pi
+uses, runs the launch file on fake hardware, and checks the nodes come up and a sweep scan is
+published. It does not touch the robot.
 
 **Updating or rolling back**
 
-Repeat steps 2 to 6 with a new tag. To roll back, set `IMAGE_TAG` in `docker/.env` to the previous
-tag, which is still on the Pi, and run `docker compose up -d --pull never`. To stop the stack,
-run `docker compose down` in `docker/`.
+Update: change `PICAR_VERSION` in `docker/.env`, then run steps 5 and 6. Roll back: set an earlier
+version and run the same steps. Only the installed release is kept on the Pi, so a rollback
+downloads that version again. It needs the Pi to be on the network.
 
 ## Documentation
 
@@ -198,7 +226,9 @@ Work is tracked as [GitHub issues](https://github.com/ram3917/PiCar_Robot/issues
 
 1. **MVP** — ultrasonic obstacle avoidance on ROS 2 in Docker, released as `v0.1.0`
 2. **v0.2** — controller and planner nodes, one hardware owner, swappable planner
-3. **Later**
+3. **v0.3** — ultrasonic servo sweep publishing `LaserScan`, motors still; release pipeline
+   from tags, with the wheel installed on the Pi
+4. **Later**
    - Greyscale sensor: edge/cliff detection, then line following
    - Wheel-speed odometry and relative goals (`/goal_pose`)
    - ML planner node publishing `/cmd_vel`

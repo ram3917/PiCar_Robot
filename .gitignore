@@ -41,3 +41,5 @@ Thumbs.db
 # rosbag2 recordings made on the robot
 data/
 picar.tar
+# Pi-side settings: the picar version to run (docker/.env.example is the template)
+docker/.env

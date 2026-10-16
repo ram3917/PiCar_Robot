@@ -126,7 +126,12 @@ class SimulatedRobot(FakeRobot):
         else:
             self._turned_s = 0.0
             self._range_m = max(self._range_m - forward * self._speed_mps * dt, 0.0)
-        return self._range_m
+        # A wall straight ahead is seen at a slant when the servo is turned: the echo travels
+        # farther. Past about 87 degrees the beam misses the wall and reads as no echo.
+        cos_deg = math.cos(math.radians(self.servo_angle or 0.0))
+        if cos_deg < 0.05:
+            return None
+        return self._range_m / cos_deg
 
 
 def _import_library() -> ModuleType:

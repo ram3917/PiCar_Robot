@@ -5,10 +5,15 @@ motor_tick_ms, and owns every safety limit (see `picar.governor.MotorGovernor`).
 else may touch the hardware: the picar-4wd library resets the HAT and claims the GPIO lines when
 it is imported, so a second owner breaks the first.
 
+With ``sweep_enabled``, the ultrasonic servo sweeps from ``sweep_min_deg`` to ``sweep_max_deg`` and
+back, one step per sensor tick. Each pass publishes one `sensor_msgs/LaserScan`. Only readings
+inside the forward cone (see `picar.sweep.in_forward_cone`) reach the range topic and the governor,
+so the forward-stop rules never act on a reading from the side.
+
 The ultrasonic read blocks for up to ~20 ms, so the sensor timer, the motor timer and the command
 callback sit in separate callback groups; run under a MultiThreadedExecutor, they execute in
-parallel. The ultrasonic read is plain GPIO and runs unlocked. The greyscale ADC and the motors
-share the HAT's I2C address, so those calls take ``_i2c_lock`` and never interleave.
+parallel. The ultrasonic read is plain GPIO and runs unlocked. The greyscale ADC, the servo and the
+motors share the HAT's I2C address, so those calls take ``_i2c_lock`` and never interleave.
 """
 
 from __future__ import annotations
@@ -23,7 +28,7 @@ from geometry_msgs.msg import Twist
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.executors import ExternalShutdownException, MultiThreadedExecutor
 from rclpy.node import Node
-from sensor_msgs.msg import JointState, Range
+from sensor_msgs.msg import JointState, LaserScan, Range
 from std_msgs.msg import UInt16MultiArray
 
 from picar.governor import GovernorConfig, MotorGovernor
@@ -34,8 +39,10 @@ from picar.interface import (
     JOINT_STATES_TOPIC,
     MOTOR_JOINTS,
     RANGE_TOPIC,
+    SCAN_TOPIC,
     SERVO_JOINT,
 )
+from picar.sweep import SweepPlan, in_forward_cone
 
 MIN_RANGE_M = 0.02
 MAX_RANGE_M = 4.0
@@ -54,6 +61,15 @@ def _range_value(range_m: float | None) -> float:
     return range_m
 
 
+def _scan_value(range_m: float | None) -> float:
+    """A LaserScan range: NaN if invalid or missing, +inf if clear, clamped to the minimum if close."""
+    if range_m is None or math.isnan(range_m):
+        return math.nan
+    if range_m > MAX_RANGE_M:
+        return math.inf
+    return max(range_m, MIN_RANGE_M)
+
+
 class ControllerNode(Node):
     def __init__(self, hardware: RobotHardware | None = None) -> None:
         super().__init__("controller")
@@ -64,6 +80,10 @@ class ControllerNode(Node):
         self.declare_parameter("sensor_period_ms", 30.0)
         self.declare_parameter("motor_tick_ms", 10.0)
         self.declare_parameter("slow_write_ms", 100.0)
+        self.declare_parameter("sweep_enabled", False)
+        self.declare_parameter("sweep_min_deg", -90.0)
+        self.declare_parameter("sweep_max_deg", 90.0)
+        self.declare_parameter("sweep_step_deg", 5.0)
         governor_fields = dataclasses.fields(GovernorConfig)
         for field in governor_fields:
             self.declare_parameter(field.name, field.default)
@@ -75,18 +95,29 @@ class ControllerNode(Node):
             sim_speed_mps=self.get_parameter("sim_speed_mps").value,
         )
         self._slow_write_s = self.get_parameter("slow_write_ms").value / 1000.0
+        self._sensor_period_s = self.get_parameter("sensor_period_ms").value / 1000.0
         self._governor = MotorGovernor(
             GovernorConfig(**{f.name: self.get_parameter(f.name).value for f in governor_fields})
         )
 
         self._lock = threading.Lock()  # the governor and _applied
-        self._i2c_lock = threading.Lock()  # greyscale reads and motor writes
+        self._i2c_lock = threading.Lock()  # greyscale reads, servo and motor writes
         # What was last written; None until the first write, which makes the motor timer stop
         # the motors explicitly at startup.
         self._applied: MotorPowers | None = None
 
-        self._hardware.set_servo_angle(0.0)  # the sensor stays locked forward in v0.2
+        self._sweep: SweepPlan | None = None
+        if self.get_parameter("sweep_enabled").value:
+            self._sweep = SweepPlan(
+                self.get_parameter("sweep_min_deg").value,
+                self.get_parameter("sweep_max_deg").value,
+                self.get_parameter("sweep_step_deg").value,
+            )
+        self._servo_deg = 0.0
+        self._pass_ranges: dict[float, float | None] = {}  # this pass's readings, by angle
+        self._hardware.set_servo_angle(0.0)  # the servo starts pointing forward
         self._range_pub = self.create_publisher(Range, RANGE_TOPIC, 10)
+        self._scan_pub = self.create_publisher(LaserScan, SCAN_TOPIC, 10)
         self._greyscale_pub = self.create_publisher(UInt16MultiArray, GREYSCALE_TOPIC, 10)
         self._joint_pub = self.create_publisher(JointState, JOINT_STATES_TOPIC, 10)
 
@@ -106,40 +137,78 @@ class ControllerNode(Node):
     # Timers
 
     def _sense(self) -> None:
+        angle_deg, pass_end = self._sweep.next_angle() if self._sweep else (0.0, False)
+        range_m: float | None = None
         try:
+            with self._i2c_lock:
+                if angle_deg != self._servo_deg:
+                    self._hardware.set_servo_angle(angle_deg)
+                    self._servo_deg = angle_deg
             range_m = self._hardware.read_range_m()
             with self._i2c_lock:
                 greyscale = self._hardware.read_greyscale()
         except Exception as error:  # a failed read must not stop the node
             # No update reaches the governor, so forward drive is blocked once the range goes
-            # stale.
+            # stale. The sweep records the angle as missing.
             self.get_logger().error(f"sensor read failed: {error!r}", throttle_duration_sec=1.0)
+            self._record_sweep_reading(angle_deg, None, pass_end)
             return
+        self._record_sweep_reading(angle_deg, range_m, pass_end)
+
+        forward = in_forward_cone(angle_deg)
         with self._lock:
-            self._governor.update_range(range_m, time.monotonic())
+            if forward:
+                self._governor.update_range(range_m, time.monotonic())
             applied = self._applied or ZERO_POWER
         stamp = self.get_clock().now().to_msg()
 
-        range_msg = Range(
-            radiation_type=Range.ULTRASOUND,
-            field_of_view=FIELD_OF_VIEW_RAD,
-            min_range=MIN_RANGE_M,
-            max_range=MAX_RANGE_M,
-            range=_range_value(range_m),
-        )
-        range_msg.header.stamp = stamp
-        range_msg.header.frame_id = FRAME_ID
-        self._range_pub.publish(range_msg)
+        if forward:
+            range_msg = Range(
+                radiation_type=Range.ULTRASOUND,
+                field_of_view=FIELD_OF_VIEW_RAD,
+                min_range=MIN_RANGE_M,
+                max_range=MAX_RANGE_M,
+                range=_range_value(range_m),
+            )
+            range_msg.header.stamp = stamp
+            range_msg.header.frame_id = FRAME_ID
+            self._range_pub.publish(range_msg)
 
         self._greyscale_pub.publish(UInt16MultiArray(data=[int(value) for value in greyscale]))
 
         joints = JointState(
             name=[SERVO_JOINT, *MOTOR_JOINTS],
-            position=[0.0] + [math.nan] * len(MOTOR_JOINTS),
+            position=[math.radians(angle_deg)] + [math.nan] * len(MOTOR_JOINTS),
             effort=[math.nan, *map(float, applied)],
         )
         joints.header.stamp = stamp
         self._joint_pub.publish(joints)
+
+    def _record_sweep_reading(self, angle_deg: float, range_m: float | None, pass_end: bool) -> None:
+        """Add one reading to the current sweep pass, and publish the scan when the pass ends."""
+        if self._sweep is None:
+            return
+        self._pass_ranges[angle_deg] = range_m
+        if not pass_end:
+            return
+        ranges = [_scan_value(self._pass_ranges.get(angle)) for angle in self._sweep.angles]
+        self._pass_ranges = {}
+
+        angles = self._sweep.angles
+        step_rad = math.radians(angles[1] - angles[0]) if len(angles) > 1 else 0.0
+        scan = LaserScan(
+            angle_min=math.radians(angles[0]),
+            angle_max=math.radians(angles[-1]),
+            angle_increment=step_rad,
+            time_increment=0.0,
+            scan_time=self._sensor_period_s * len(angles),
+            range_min=MIN_RANGE_M,
+            range_max=MAX_RANGE_M,
+            ranges=ranges,
+        )
+        scan.header.stamp = self.get_clock().now().to_msg()
+        scan.header.frame_id = FRAME_ID
+        self._scan_pub.publish(scan)
 
     def _drive(self) -> None:
         try:
@@ -172,8 +241,17 @@ class ControllerNode(Node):
         except Exception as error:
             self.get_logger().error(f"stopping the motors failed: {error!r}")
 
+    def _home_servo(self) -> None:
+        try:
+            with self._i2c_lock:
+                self._hardware.set_servo_angle(0.0)
+            self._servo_deg = 0.0
+        except Exception as error:
+            self.get_logger().error(f"returning the servo to forward failed: {error!r}")
+
     def destroy_node(self) -> bool:
         self._try_stop()
+        self._home_servo()
         return super().destroy_node()
 
 

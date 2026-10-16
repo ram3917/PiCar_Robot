@@ -1,6 +1,8 @@
 """The topics and joint names the controller and the planner agree on. All messages are standard.
 
-- ``RANGE_TOPIC``: ``sensor_msgs/Range``, the forward ultrasonic range (REP 117)
+- ``RANGE_TOPIC``: ``sensor_msgs/Range``, the forward ultrasonic range (REP 117). Only readings
+  taken while the servo points within the forward cone are published here
+- ``SCAN_TOPIC``: ``sensor_msgs/LaserScan``, one ultrasonic sweep, published at the end of each pass
 - ``GREYSCALE_TOPIC``: ``std_msgs/UInt16MultiArray``, the three greyscale ADC values
 - ``JOINT_STATES_TOPIC``: ``sensor_msgs/JointState``, the servo angle (``position``, radians) and the
   applied motor power in percent (``effort``); NaN means not measured
@@ -16,6 +18,7 @@ import math
 from sensor_msgs.msg import Range
 
 RANGE_TOPIC = "/controller/range"
+SCAN_TOPIC = "/controller/scan"
 GREYSCALE_TOPIC = "/controller/greyscale"
 JOINT_STATES_TOPIC = "/joint_states"
 CMD_VEL_TOPIC = "/cmd_vel"

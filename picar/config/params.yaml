@@ -12,10 +12,18 @@ controller:
     # power); each turn in place faces the next distance, cycling. In metres.
     sim_walls_m: [1.0, 0.6, 1.5]
     sim_speed_mps: 0.3
-    sensor_period_ms: 30.0   # one range, greyscale and joint-state message per period (a target)
+    sensor_period_ms: 30.0   # one servo step, greyscale and joint-state message per period (a target)
     motor_tick_ms: 10.0      # how often the motors are updated from the latest command
-    hard_stop_m: 0.10        # forward drive stops when the range is closer than this
-    range_stale_ms: 150.0    # no valid range for this long also stops forward drive
+    # The servo sweep. Each pass publishes one LaserScan on /controller/scan. Sweeping never
+    # moves the robot: the motors stay as /cmd_vel sets them (the planner's drive is false).
+    sweep_enabled: true
+    sweep_min_deg: -90.0     # positive angles are to the left
+    sweep_max_deg: 90.0
+    sweep_step_deg: 5.0      # 37 steps per pass, about 1.1 s at sensor_period_ms 30
+    # Only readings within 15 degrees of forward count as the forward range. Forward readings
+    # arrive about once per pass, so the stale window must be longer than one pass.
+    hard_stop_m: 0.25        # forward drive stops when the forward range is closer than this
+    range_stale_ms: 1500.0   # no forward range for this long also stops forward drive
     cmd_timeout_ms: 500.0    # no new /cmd_vel for this long stops all motors
     slow_write_ms: 100.0     # warn when one motor write takes longer than this
 
@@ -30,4 +38,4 @@ planner:
     stop_duration_s: 0.2
     reverse_duration_s: 0.4
     turn_duration_s: 1.0     # how long the turn lasts
-    range_stale_ms: 500.0    # an older range makes the command a stop
+    range_stale_ms: 1500.0   # an older forward range makes the command a stop (one sweep pass apart)

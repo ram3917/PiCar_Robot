@@ -1,10 +1,16 @@
+import os
+
 from setuptools import find_packages, setup
 
 package_name = "picar"
 
+# Release builds set PICAR_BUILD_VERSION from the git tag (release.yml). Other builds, such as
+# colcon in the dev container, keep the development placeholder.
+version = os.environ.get("PICAR_BUILD_VERSION", "0.0.0.dev0")
+
 setup(
     name=package_name,
-    version="0.2.0",
+    version=version,
     packages=find_packages(exclude=["test"]),
     data_files=[
         ("share/ament_index/resource_index/packages", ["resource/" + package_name]),

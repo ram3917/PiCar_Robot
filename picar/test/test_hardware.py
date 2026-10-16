@@ -157,6 +157,26 @@ def test_sim_turning_in_place_faces_the_next_wall_cyclically():
     assert distances == pytest.approx([1.0, 1.0, 1.0, 0.6, 0.6, 0.6, 0.6, 1.0])
 
 
+def test_sim_wall_seen_at_an_angle_is_farther_away():
+    clock = Clock()
+    robot = _sim(clock)  # wall at 1.0 m, straight ahead
+
+    robot.set_servo_angle(60.0)  # cos 60 = 0.5: the echo travels twice as far
+    assert robot.read_range_m() == pytest.approx(2.0)
+
+    robot.set_servo_angle(-60.0)
+    assert robot.read_range_m() == pytest.approx(2.0)
+
+
+def test_sim_beam_past_the_wall_reads_as_no_echo():
+    clock = Clock()
+    robot = _sim(clock)
+
+    robot.set_servo_angle(90.0)
+
+    assert robot.read_range_m() is None
+
+
 def test_sim_never_reports_a_negative_range():
     clock = Clock()
     robot = _sim(clock)

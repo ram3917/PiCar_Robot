@@ -15,7 +15,13 @@ from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
 
-from picar.interface import CMD_VEL_TOPIC, GREYSCALE_TOPIC, JOINT_STATES_TOPIC, RANGE_TOPIC
+from picar.interface import (
+    CMD_VEL_TOPIC,
+    GREYSCALE_TOPIC,
+    JOINT_STATES_TOPIC,
+    RANGE_TOPIC,
+    SCAN_TOPIC,
+)
 
 
 def generate_launch_description() -> LaunchDescription:
@@ -61,7 +67,7 @@ def generate_launch_description() -> LaunchDescription:
             ExecuteProcess(
                 cmd=[
                     "ros2", "bag", "record",
-                    RANGE_TOPIC, GREYSCALE_TOPIC, JOINT_STATES_TOPIC, CMD_VEL_TOPIC,
+                    RANGE_TOPIC, SCAN_TOPIC, GREYSCALE_TOPIC, JOINT_STATES_TOPIC, CMD_VEL_TOPIC,
                 ],
                 cwd="/data",
                 condition=IfCondition(LaunchConfiguration("record")),
