@@ -25,6 +25,20 @@ Visualization Manager:
         Reliability Policy: Best Effort
         Value: /controller/range
       Value: true
+    # The occupancy grid from scan_viewer_node (scan_viewer.launch.py), in the same fixed frame.
+    - Class: rviz_default_plugins/Map
+      Enabled: true
+      Name: Occupancy grid
+      Alpha: 0.7
+      Color Scheme: map
+      Draw Behind: false
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /map
+      Value: true
     # The four motor powers, drawn by motor_markers_node (green forward, red reverse).
     - Class: rviz_default_plugins/MarkerArray
       Enabled: true

@@ -15,7 +15,10 @@ setup(
     data_files=[
         ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
         ("share/" + package_name, ["package.xml"]),
-        ("share/" + package_name + "/launch", ["launch/picar.launch.py", "launch/manual_test.launch.py"]),
+        (
+            "share/" + package_name + "/launch",
+            ["launch/picar.launch.py", "launch/manual_test.launch.py", "launch/scan_viewer.launch.py"],
+        ),
         ("share/" + package_name + "/test", ["test/motor_markers_node.py"]),
         ("share/" + package_name + "/config", ["config/params.yaml", "config/picar.rviz"]),
     ],
@@ -29,6 +32,7 @@ setup(
             "controller_node = picar.controller_node:main",
             "planner_node = picar.planner_node:main",
             "hw_check = picar.hw_check:main",
+            "scan_viewer_node = picar.scan_viewer_node:main",
         ],
     },
 )
